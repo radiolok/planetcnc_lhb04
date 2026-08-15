@@ -1,8 +1,9 @@
 # mpgd — адаптер пульта XHC LHB04 ↔ PlanetCNC TNG
 
 `mpgd` (Manual Pulse Generator Daemon) — кросс-платформенный фоновый процесс,
-связывающий USB-HID пульт **XHC LHB04** (VID `0x10CE`, PID `0xEB70` и варианты)
-с управляющим ПО **PlanetCNC TNG** (контроллеры Mk3/4) через C API библиотеки
+связывающий USB-HID пульт **XHC LHB04** (VID `0x10CE`, PID `0xEB70` и варианты;
+также совместимые клоны, например **KTURT**) с управляющим ПО **PlanetCNC TNG**
+(контроллеры Mk3/4) через C API библиотеки
 `PlanetCNCLib64.dll` / `libPlanetCNCLib64.so`.
 
 Демон читает кнопки и маховик (MPG) пульта, выполняет джог осей, обновляет
@@ -13,8 +14,9 @@ LCD-дисплей пульта (координаты, подача, оборо�
 
 ## Возможности (v1)
 
-- **Чтение пульта** — опрос HID-пакетов (report `0x04`) с частотой 100 Гц,
-  edge-детекция кнопок с debounce 50 мс, накопление импульсов маховика.
+- **Чтение пульта** — опрос HID-пакетов (report `0x04`, 6 или 8 байт в
+  зависимости от устройства) с частотой 100 Гц, edge-детекция кнопок с
+  debounce 50 мс, накопление импульсов маховика.
 - **Джог маховиком (MPG)** — режимы Step и Continuous; выбор оси ручкой
   (X/Y/Z/A); шаг определяется положением шагового переключателя
   (`0.001 / 0.01 / 0.1 / 1.0` мм).
@@ -70,6 +72,7 @@ LCD-дисплей пульта (координаты, подача, оборо�
 | [hidapi](https://github.com/libusb/hidapi) | 0.14.0 | USB HID |
 | [yaml-cpp](https://github.com/jbeder/yaml-cpp) | 0.8.0 | конфигурация |
 | [spdlog](https://github.com/gabime/spdlog) | 1.14.1 | логирование |
+| [Dear ImGui](https://github.com/ocornut/imgui) | 1.90.9 | GUI тестовой утилиты `mpg_gui` |
 
 ---
 
@@ -89,6 +92,13 @@ cmake --build build -j
 
 Результат — `build/Release/mpgd.exe` (Windows) или `build/mpgd` (Linux).
 Все зависимости линкуются статически, исполняемый файл самодостаточен.
+
+Вместе с демоном собирается тестовая GUI-утилита `mpg_gui.exe` (см. раздел
+«Диагностика» и [`tools/README.md`](tools/README.md)):
+
+```powershell
+cmake --build build --config Release --target mpg_gui
+```
 
 ### Запуск тестов
 
@@ -129,6 +139,25 @@ mpgd --attach
 # Сниффер пакетов (отладка протокола)
 mpgd --sniff
 ```
+
+---
+
+## Диагностика
+
+Для проверки работы адаптера (кнопки, маховик, селектор оси) есть тестовая
+GUI-утилита **`mpg_gui`** — оконное приложение, читающее пульт напрямую без
+обращения к TNG и показывающее сырые пакеты и их расшифровку в реальном
+времени (включая захват всех пакетов в `mpg_gui_raw.log`). Подробности — в
+[`tools/README.md`](tools/README.md).
+
+```powershell
+build\Release\mpg_gui.exe
+```
+
+Полезные режимы демона для диагностики:
+
+- `mpgd --list` — список HID-устройств (VID/PID, строки производителя);
+- `mpgd --sniff` — захват и hex-дамп сырых пакетов пульта в консоль (без TNG).
 
 ---
 
@@ -212,7 +241,7 @@ buttons:
  │  XHC LHB04   │────▶│       mpgd          │────▶│ PlanetCNC TNG │
  │  (USB HID)   │◀────│     (daemon)        │◀────│   (C API)     │
  └──────────────┘     └─────────────────────┘     └───────────────┘
-   report 0x04 (8 B)      потоки + shared state     LoadLibrary +
+   report 0x04 (6/8 B)     потоки + shared state     LoadLibrary +
    report 0x06 (6×8 B)        (mutex)               GetProcAddress
 ```
 
@@ -259,6 +288,8 @@ mpgd/
 │   └── utils/
 │       ├── Logger.*                  # обёртка spdlog
 │       └── Daemon.*                  # сигналы/остановка
+├── tools/
+│   └── mpg_gui/main.cpp              # тестовая GUI-утилита (Dear ImGui)
 └── tests/                            # unit-тесты (packet/jog/display)
 ```
 
