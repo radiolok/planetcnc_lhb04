@@ -136,23 +136,29 @@ const char* axisVariableName(int idx) {
 
 // Renders the six LCD variables into the 6 x 8-byte output reports that the
 // pendant displays (report ID 0x06, same wire layout as the daemon).
-void buildDisplayFrame(const int64_t (&acc)[6],
+//
+// The mapping follows the reference driver: the three work lines show
+// X/Y/Z (line 1 shows A when the A axis is selected), the three machine
+// lines mirror X/Y/Z, and Spindle/Feed are exposed as override percentages.
+void buildDisplayFrame(const int64_t (&acc)[6], uint8_t axisCode,
                        uint8_t (&reports)[mpgd::xhc::kDisplayReportsCount]
                                           [mpgd::xhc::kDisplayReportSize]) {
+    const bool aActive = (axisCode == mpgd::xhc::kAxisA);
+
     mpgd::usb::DisplayData d;
-    d.line1 = static_cast<double>(acc[0]);
+    d.line1 = static_cast<double>(aActive ? acc[3] : acc[0]);
     d.line2 = static_cast<double>(acc[1]);
     d.line3 = static_cast<double>(acc[2]);
-    d.machine1 = static_cast<double>(acc[3]);
-    d.machine2 = static_cast<double>(acc[4]);
-    d.machine3 = static_cast<double>(acc[5]);
-    d.feedOverride = 0.0;
-    d.spindleOverride = 0.0;
+    d.machine1 = static_cast<double>(aActive ? acc[3] : acc[0]);
+    d.machine2 = static_cast<double>(acc[1]);
+    d.machine3 = static_cast<double>(acc[2]);
+    d.feedOverride = static_cast<double>(acc[5]) / 100.0;
+    d.spindleOverride = static_cast<double>(acc[4]) / 100.0;
     d.feedValue = 0.0;
     d.spindleRps = 0.0;
     d.stepsize = 1;
     d.inchIcon = false;
-    d.aAxisActive = false;
+    d.aAxisActive = aActive;
 
     uint8_t payload[mpgd::xhc::kDisplayBufSize];
     mpgd::usb::PacketParser::buildDisplayPayload(d, payload);
@@ -189,8 +195,62 @@ mpgd::usb::ParsedInput parsePartial(const uint8_t* buf, size_t len) {
     return p;
 }
 
+// Opens the pendant for both input reads and display writes. On Windows the
+// pendant enumerates as several HID top-level collections: one exposes the
+// input report (0x04) and another the feature report (0x06) used for the LCD.
+// We probe each node with a feature-report write to find the write-capable one.
+bool openPendant(mpgd::usb::HidDevice& readDev, mpgd::usb::HidDevice& writeDev,
+                 std::string& err) {
+    const auto devs = mpgd::usb::enumerateDevices(kVendorId, kProductIds);
+    if (devs.empty()) {
+        err = "no XHC LHB04 device found";
+        return false;
+    }
+
+    if (devs.size() == 1) {
+        if (!readDev.openPath(devs[0].path) || !writeDev.openPath(devs[0].path)) {
+            err = "open failed";
+            return false;
+        }
+        return true;
+    }
+
+    mpgd::usb::HidDeviceInfo readInfo;
+    mpgd::usb::HidDeviceInfo writeInfo;
+    bool haveRead = false;
+    bool haveWrite = false;
+    for (const auto& info : devs) {
+        mpgd::usb::HidDevice probe;
+        if (!probe.openPath(info.path)) continue;
+        uint8_t rep[mpgd::xhc::kDisplayReportSize] = {
+            mpgd::xhc::kOutputReportId, 0, 0, 0, 0, 0, 0, 0};
+        const int wr = probe.sendFeatureReport(rep, sizeof(rep));
+        if (wr >= 0) {
+            if (!haveWrite) { writeInfo = info; haveWrite = true; }
+        } else {
+            if (!haveRead) { readInfo = info; haveRead = true; }
+        }
+    }
+
+    if (haveWrite && haveRead) {
+        if (!readDev.openPath(readInfo.path) || !writeDev.openPath(writeInfo.path)) {
+            err = "open read/write collections failed";
+            return false;
+        }
+        return true;
+    }
+
+    // Could not separate roles; use the first node for both.
+    if (!readDev.openPath(devs[0].path) || !writeDev.openPath(devs[0].path)) {
+        err = "open failed";
+        return false;
+    }
+    return true;
+}
+
 void readerThread() {
-    mpgd::usb::HidDevice dev;
+    mpgd::usb::HidDevice readDev;
+    mpgd::usb::HidDevice writeDev;
     const int reconnectMs = 2000;
     uint8_t lastButton = 0;
     bool wasConnected = false;
@@ -202,21 +262,24 @@ void readerThread() {
     auto lastDataTp = std::chrono::steady_clock::now();
     uint8_t lastBadReportId = 0xFF;
     auto lastDisplayTp = std::chrono::steady_clock::now();
+    bool lastDisplayWriteFailed = false;
+    bool displayModeLogged = false;
 
     // Capture every raw packet to a file so it can be shared/analyzed.
     g_rawFile.open(g_rawLogPath, std::ios::app);
 
     while (!g_shutdown.load()) {
-        if (!dev.isOpen()) {
+        if (!readDev.isOpen() || !writeDev.isOpen()) {
             std::string err;
-            if (dev.open(kVendorId, kProductIds, err)) {
+            if (openPendant(readDev, writeDev, err)) {
                 {
                     std::lock_guard<std::mutex> lk(g_mtx);
                     g_snap.connected = true;
-                    g_snap.manufacturer = dev.manufacturer();
-                    g_snap.product = dev.product();
+                    g_snap.manufacturer = readDev.manufacturer();
+                    g_snap.product = readDev.product();
                 }
-                logAdd("Connected: " + dev.manufacturer() + " " + dev.product());
+                logAdd("Connected: " + readDev.manufacturer() + " " + readDev.product());
+                logAdd("display via feature report (0x06)");
                 wasConnected = true;
             } else {
                 if (wasConnected) {
@@ -236,7 +299,7 @@ void readerThread() {
         // Read into a larger buffer so the true report length is visible even
         // if it differs from the 8 bytes the reference driver expects.
         uint8_t buf[64] = {0};
-        int r = dev.read(buf, sizeof(buf), 50);
+        int r = readDev.read(buf, sizeof(buf), 50);
 
         if (r > 0) {
             lastDataTp = std::chrono::steady_clock::now();
@@ -355,7 +418,8 @@ void readerThread() {
         } else { // r < 0: real hidapi error
             char msg[64];
             std::snprintf(msg, sizeof(msg), "Read error (%d), reconnecting...", r);
-            dev.close();
+            readDev.close();
+            writeDev.close();
             logAdd(msg);
             wasConnected = false;
             {
@@ -368,22 +432,39 @@ void readerThread() {
         // Feedback path (PC -> pendant): refresh the LCD with the current
         // XYZASF accumulators at ~25 Hz max so the display is no longer blank
         // and the wheel visibly changes only the selected variable.
-        if (dev.isOpen()) {
+        if (writeDev.isOpen()) {
             const auto nowD = std::chrono::steady_clock::now();
             const auto sinceDisplay =
                 std::chrono::duration_cast<std::chrono::milliseconds>(nowD - lastDisplayTp).count();
             if (sinceDisplay >= 40) {
                 int64_t acc[6];
+                uint8_t axisCode = 0;
                 {
                     std::lock_guard<std::mutex> lk(g_mtx);
                     for (int i = 0; i < 6; ++i) acc[i] = g_snap.axisAccum[i];
+                    axisCode = g_snap.axisCode;
                 }
                 uint8_t frame[mpgd::xhc::kDisplayReportsCount]
                              [mpgd::xhc::kDisplayReportSize];
-                buildDisplayFrame(acc, frame);
+                buildDisplayFrame(acc, axisCode, frame);
+
+                int firstWr = 0;
                 for (size_t rr = 0; rr < mpgd::xhc::kDisplayReportsCount; ++rr) {
-                    if (dev.write(frame[rr], mpgd::xhc::kDisplayReportSize) < 0)
+                    const int wr = writeDev.sendFeatureReport(frame[rr], mpgd::xhc::kDisplayReportSize);
+                    if (rr == 0) firstWr = wr;
+                    if (wr < 0) {
+                        if (!lastDisplayWriteFailed) {
+                            logAdd("display write failed (" + writeDev.lastError() + ")");
+                            lastDisplayWriteFailed = true;
+                        }
                         break;
+                    }
+                    lastDisplayWriteFailed = false;
+                }
+                if (!displayModeLogged && !lastDisplayWriteFailed) {
+                    displayModeLogged = true;
+                    logAdd("display feedback active (feature report, write #0 -> " +
+                           std::to_string(firstWr) + ")");
                 }
                 lastDisplayTp = nowD;
             }
@@ -392,7 +473,8 @@ void readerThread() {
 
     if (g_rawFile.is_open())
         g_rawFile.close();
-    dev.close();
+    readDev.close();
+    writeDev.close();
 }
 
 void DrawUI() {
@@ -528,8 +610,8 @@ void DrawUI() {
         ImGui::SameLine(0.0f, 18.0f);
     }
     ImGui::NewLine();
-    ImGui::TextDisabled("wheel updates only the selected variable; X/Y/Z are "
-                        "LCD lines, A/S/F are machine lines");
+    ImGui::TextDisabled("wheel updates only the selected variable; X/Y/Z on the "
+                        "3 LCD lines, A on line 1, S/F as override %%");
 
     ImGui::Separator();
     ImGui::Text("Button:");

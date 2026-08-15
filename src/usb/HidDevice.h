@@ -8,6 +8,23 @@ struct hid_device_; // forward declaration of the opaque hidapi type
 
 namespace mpgd::usb {
 
+// One enumerated HID device node. A single physical pendant can expose
+// several nodes on Windows (one per HID top-level collection), so callers
+// must enumerate and pick the right node for input reads vs feature-report
+// (display) writes.
+struct HidDeviceInfo {
+    std::string path;
+    uint16_t vendorId = 0;
+    uint16_t productId = 0;
+    std::string manufacturer;
+    std::string product;
+    int interfaceNumber = -1;
+};
+
+// Enumerates all HID nodes matching any of the given (vendorId, productId).
+std::vector<HidDeviceInfo> enumerateDevices(
+    uint16_t vendorId, const std::vector<uint16_t>& productIds);
+
 // Thin RAII wrapper around hidapi. Owns one open HID device.
 class HidDevice {
 public:
@@ -24,6 +41,9 @@ public:
     bool open(uint16_t vendorId, const std::vector<uint16_t>& productIds,
               std::string& error);
 
+    // Opens a specific device node by its enumeration path.
+    bool openPath(const std::string& path);
+
     // Closes the device and marks it disconnected.
     void close();
 
@@ -36,9 +56,22 @@ public:
     // Writes one output report. Returns bytes written or negative on error.
     int write(const uint8_t* data, size_t length);
 
+    // Sends a feature report (HID SET_REPORT). The LHB04 LCD is updated via
+    // feature reports, not interrupt OUT writes.
+    int sendFeatureReport(const uint8_t* data, size_t length);
+
     // Returns the manufacturer/product strings of the currently open device.
     std::string manufacturer() const { return manufacturer_; }
     std::string product() const { return product_; }
+
+    // Last transport error from hidapi (empty when none). Useful for
+    // diagnosing why a write/feature-report failed.
+    std::string lastError() const;
+
+    // Probes the length of a feature report via GET_REPORT. Returns the total
+    // length including the report ID byte, or negative when the device does
+    // not support GET_REPORT.
+    int getFeatureReportLength(uint8_t reportId);
 
 private:
     hid_device_* device_ = nullptr;

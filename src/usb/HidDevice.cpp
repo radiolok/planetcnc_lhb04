@@ -64,6 +64,48 @@ bool HidDevice::open(uint16_t vendorId, const std::vector<uint16_t>& productIds,
     return false;
 }
 
+bool HidDevice::openPath(const std::string& path) {
+    close();
+    hid_device_* dev = hid_open_path(path.c_str());
+    if (!dev) return false;
+    device_ = dev;
+    wchar_t buf[256] = {0};
+    if (hid_get_manufacturer_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
+        manufacturer_ = narrow(buf);
+    }
+    if (hid_get_product_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
+        product_ = narrow(buf);
+    }
+    return true;
+}
+
+std::vector<HidDeviceInfo> enumerateDevices(uint16_t vendorId,
+                                            const std::vector<uint16_t>& productIds) {
+    std::vector<HidDeviceInfo> out;
+    hid_device_info* devs = hid_enumerate(vendorId, 0x0);
+    for (hid_device_info* d = devs; d; d = d->next) {
+        bool match = productIds.empty();
+        for (uint16_t pid : productIds) {
+            if (d->product_id == pid) {
+                match = true;
+                break;
+            }
+        }
+        if (!match) continue;
+
+        HidDeviceInfo info;
+        info.path = d->path ? d->path : "";
+        info.vendorId = d->vendor_id;
+        info.productId = d->product_id;
+        info.manufacturer = narrow(d->manufacturer_string);
+        info.product = narrow(d->product_string);
+        info.interfaceNumber = d->interface_number;
+        out.push_back(info);
+    }
+    hid_free_enumeration(devs);
+    return out;
+}
+
 void HidDevice::close() {
     if (device_) {
         hid_close(device_);
@@ -81,6 +123,24 @@ int HidDevice::read(uint8_t* data, size_t length, int timeoutMs) {
 int HidDevice::write(const uint8_t* data, size_t length) {
     if (!device_) return -1;
     return hid_write(device_, data, static_cast<size_t>(length));
+}
+
+int HidDevice::sendFeatureReport(const uint8_t* data, size_t length) {
+    if (!device_) return -1;
+    return hid_send_feature_report(device_, data, static_cast<size_t>(length));
+}
+
+std::string HidDevice::lastError() const {
+    if (!device_) return std::string();
+    const wchar_t* e = hid_error(device_);
+    return e ? narrow(e) : std::string();
+}
+
+int HidDevice::getFeatureReportLength(uint8_t reportId) {
+    if (!device_) return -1;
+    uint8_t buf[256] = {0};
+    buf[0] = reportId;
+    return hid_get_feature_report(device_, buf, sizeof(buf));
 }
 
 } // namespace mpgd::usb

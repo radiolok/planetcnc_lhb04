@@ -31,7 +31,7 @@ void DisplayThread::run() {
             DisplayUpdater::Frame frame{};
             if (updater_.build(frame)) {
                 for (const auto& report : frame) {
-                    int r = device_.write(report.data(), report.size());
+                    int r = device_.sendFeatureReport(report.data(), report.size());
                     if (r < 0) {
                         logDebug("display write failed (%d)", r);
                         break;
