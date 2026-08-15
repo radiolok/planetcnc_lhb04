@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <limits>
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -24,7 +25,12 @@ void* loadLibrary(const std::string& path) {
         return reinterpret_cast<void*>(LoadLibraryW(L"PlanetCNCLib64.dll"));
     }
     std::wstring w(path.begin(), path.end());
-    return reinterpret_cast<void*>(LoadLibraryW(w.c_str()));
+    // LOAD_WITH_ALTERED_SEARCH_PATH makes the loader resolve this DLL's
+    // dependencies relative to its own directory. PlanetCNCLib64.dll depends
+    // on PlanetCNCCore64.dll which lives next to it, so a full path works
+    // without adding the PlanetCNC install dir to PATH.
+    return reinterpret_cast<void*>(
+        LoadLibraryExW(w.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH));
 }
 
 void* getSymbol(void* h, const char* name) {
@@ -133,6 +139,7 @@ bool TngApi::load(const std::string& libPath, std::string& error) {
     resolve("InfoJogPot", fnInfoJogPot_, false, error);
     resolve("InfoWorkPosition3", fnInfoWorkPosition3_, true, error);
     resolve("InfoMotorPosition3", fnInfoMotorPosition3_, true, error);
+    resolve("InfoMotorPosition", fnInfoMotorPosition_, false, error);
 
     resolve("Jog", fnJog_, true, error);
     resolve("Jog9", fnJog9_, false, error);
@@ -180,6 +187,7 @@ void TngApi::unload() {
     fnStartCode_ = nullptr; fnOpenCode_ = nullptr;
     fnInfoSpeed_ = nullptr; fnInfoSpindle_ = nullptr; fnInfoJogPot_ = nullptr;
     fnInfoWorkPosition3_ = nullptr; fnInfoMotorPosition3_ = nullptr;
+    fnInfoMotorPosition_ = nullptr;
     fnJog_ = nullptr; fnJog9_ = nullptr; fnJogStop_ = nullptr; fnMoveAxis_ = nullptr;
     fnSetInitialiseCB_ = nullptr; fnSetRefreshCB_ = nullptr;
     fnSetIdleCB_ = nullptr; fnSetLineNumCB_ = nullptr;
@@ -198,27 +206,28 @@ void TngApi::installCallbacks() {
 }
 
 // --- Run & exit ------------------------------------------------------------
+// NOTE: Run()/RunProfile() block for the lifetime of the TNG process (they run
+// the TNG message loop on the calling thread and return only after Exit()).
+// They must therefore NOT hold mtx_: otherwise every other API call would
+// deadlock behind the mutex while Run() is blocked. The lifecycle calls are
+// intentionally lock-free; the rest of the API remains serialized via mtx_.
 bool TngApi::run(bool hideUI) {
     if (!fnRun_) return false;
-    std::lock_guard<std::mutex> lk(mtx_);
     return fnRun_(hideUI) == 0;
 }
 
 bool TngApi::runProfile(bool hideUI, const std::string& profile) {
     if (!fnRunProfile_) return false;
-    std::lock_guard<std::mutex> lk(mtx_);
     return fnRunProfile_(hideUI, profile.c_str()) == 0;
 }
 
 void TngApi::exitTng() {
     if (!fnExit_) return;
-    std::lock_guard<std::mutex> lk(mtx_);
     fnExit_();
 }
 
 void TngApi::exitTngForce() {
     if (!fnExitForce_) return;
-    std::lock_guard<std::mutex> lk(mtx_);
     fnExitForce_();
 }
 
@@ -380,6 +389,18 @@ bool TngApi::infoMotorPosition3(double& x, double& y, double& z) {
     if (!fnInfoMotorPosition3_) return false;
     std::lock_guard<std::mutex> lk(mtx_);
     return fnInfoMotorPosition3_(&x, &y, &z);
+}
+double TngApi::infoMotorPosition(int axis) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    if (fnInfoMotorPosition_) return fnInfoMotorPosition_(axis);
+    // Fallback: derive X/Y/Z from the 3-axis variant; A/B/C unavailable.
+    if (axis < 3 && fnInfoMotorPosition3_) {
+        double x, y, z;
+        if (fnInfoMotorPosition3_(&x, &y, &z)) {
+            return axis == 0 ? x : (axis == 1 ? y : z);
+        }
+    }
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
 // --- Jog / move ------------------------------------------------------------

@@ -20,11 +20,12 @@ planetcnc:
 
 jogging:
   step_sizes: [0.001, 0.01, 0.1, 1.0]   # mm (stepsize sequence x 0.001)
-  max_speed: 1000.0                     # mm/min
-  mode: "step"                          # step | continuous
+  max_speed: 1000.0                     # mm/min (speed of position-following)
+  mode: "step"                          # step | continuous (unused by wheel)
   override_step: 10.0                   # percent per wheel click for override
-  feed_override_param: "SpeedFeedOverride"
-  spindle_override_param: "SpeedSpindleOverride"
+  feed_override_param: "_ovrd_speedfeed"
+  spindle_override_param: "_ovrd_spindle"
+  jog_speed: 12.0                       # mm/s; Jog() velocity multiplier (= _jog_speed)
 
 polling:
   usb_hz: 100          # USB input poll rate

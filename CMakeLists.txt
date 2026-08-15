@@ -155,3 +155,9 @@ target_link_libraries(mpg_gui PRIVATE
     opengl32 user32 gdi32 shell32 dwmapi imm32
 )
 set_target_properties(mpg_gui PROPERTIES WIN32_EXECUTABLE TRUE)
+
+# ---------------------------------------------------------------------------
+# TNG API probe (Stage 3 real-controller validation)
+# ---------------------------------------------------------------------------
+add_executable(tng_probe tools/tng_probe/main.cpp)
+target_link_libraries(tng_probe PRIVATE mpgd::core)

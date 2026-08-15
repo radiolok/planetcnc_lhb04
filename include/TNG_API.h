@@ -45,6 +45,7 @@ using Fn_GetParam           = double(*)(const char*);
 using Fn_StartCode          = bool  (*)(const char*);
 using Fn_OpenCode           = bool  (*)(const char*);
 using Fn_InfoPos3           = bool  (*)(double*, double*, double*);
+using Fn_InfoPosAxis        = double(*)(int);
 using Fn_InfoSpeed          = double(*)();
 using Fn_InfoJogPot         = unsigned int (*)();
 using Fn_Jog                = bool  (*)(bool, double, double, double);

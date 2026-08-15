@@ -42,6 +42,7 @@ public:
     double workX = 0.0, workY = 0.0, workZ = 0.0;
     bool motorPosOk = true;
     double motorX = 0.0, motorY = 0.0, motorZ = 0.0;
+    double motorA = 0.0, motorB = 0.0, motorC = 0.0;
 
     std::map<std::string, double> params;
 
@@ -50,6 +51,8 @@ public:
     std::vector<JogCall> jogs;
     struct Jog9Call { bool step; double a, b, c; };
     std::vector<Jog9Call> jogs9;
+    struct MoveAxisCall { double speed; int axis; double value; };
+    std::vector<MoveAxisCall> moveAxes;
     int jogStops = 0;
     int estopToggles = 0;
     int stops = 0;
@@ -112,6 +115,17 @@ public:
         if (motorPosOk) { x = motorX; y = motorY; z = motorZ; }
         return motorPosOk;
     }
+    double infoMotorPosition(int axis) override {
+        switch (axis) {
+            case 0: return motorX;
+            case 1: return motorY;
+            case 2: return motorZ;
+            case 3: return motorA;
+            case 4: return motorB;
+            case 5: return motorC;
+            default: return 0.0;
+        }
+    }
 
     bool jog(bool step, double x, double y, double z) override {
         jogs.push_back({step, x, y, z});
@@ -125,6 +139,10 @@ public:
         return jogResult;
     }
     bool jogStop() override { ++jogStops; return true; }
+    bool moveAxis(double speed, int axis, double value) override {
+        moveAxes.push_back({speed, axis, value});
+        return true;
+    }
 };
 
 Config makeConfig() {
@@ -141,99 +159,169 @@ void addButton(Config& cfg, const std::string& name, const std::string& action) 
 // JogController
 // ---------------------------------------------------------------------------
 
-static void test_jog_step_x() {
+static void test_servo_velocity() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
+    cfg.jogSpeed = 1.0;  // 1:1 so the Jog value equals the velocity
+    api.motorX = 0.0;
     state.pendant.axisCode = xhc::kAxisX;
-    state.stepSize = 0.01;
-    state.jogMode = JogMode::Step;
-    state.pendant.jogCounts.store(5);
-
-    JogController jc(api, state, cfg);
-    jc.tick();
-
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK(api.jogs[0].step);
-    CHECK_NEAR(api.jogs[0].x, 0.05, 1e-9);
-    CHECK_NEAR(api.jogs[0].y, 0.0, 1e-9);
-    CHECK_NEAR(api.jogs[0].z, 0.0, 1e-9);
-    CHECK_EQ(api.jogs9.size(), 0u);
-}
-
-static void test_jog_step_negative_y() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    state.pendant.axisCode = xhc::kAxisY;
-    state.stepSize = 0.1;
-    state.jogMode = JogMode::Step;
-    state.pendant.jogCounts.store(-3);
-
-    JogController jc(api, state, cfg);
-    jc.tick();
-
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK_NEAR(api.jogs[0].y, -0.3, 1e-9);
-}
-
-static void test_jog_a_axis_uses_jog9() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    state.pendant.axisCode = xhc::kAxisA;
-    state.stepSize = 0.01;
-    state.jogMode = JogMode::Step;
-    state.pendant.jogCounts.store(2);
-
-    JogController jc(api, state, cfg);
-    jc.tick();
-
-    CHECK_EQ(api.jogs.size(), 0u);
-    CHECK_EQ(api.jogs9.size(), 1u);
-    CHECK(api.jogs9[0].step);
-    CHECK_NEAR(api.jogs9[0].a, 0.02, 1e-9);
-}
-
-static void test_jog_continuous_speed() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    cfg.maxSpeed = 1000.0;
-    state.pendant.axisCode = xhc::kAxisX;
-    state.jogMode = JogMode::Continuous;
-    state.pendant.jogCounts.store(3);
+    state.stepSize = 1.0;
+    state.pendant.jogCounts.store(2);  // error 2 -> vel 10
 
     JogController jc(api, state, cfg);
     jc.tick();
 
     CHECK_EQ(api.jogs.size(), 1u);
     CHECK(!api.jogs[0].step);
-    CHECK_NEAR(api.jogs[0].x, 1000.0, 1e-9);
+    CHECK_NEAR(api.jogs[0].x, 10.0, 1e-9);
+    CHECK_NEAR(api.jogs[0].y, 0.0, 1e-9);
+    CHECK_NEAR(api.jogs[0].z, 0.0, 1e-9);
+    CHECK_EQ(api.jogs9.size(), 0u);
+    CHECK_EQ(api.moveAxes.size(), 0u);
 }
 
-static void test_jog_continuous_idle_stops() {
+static void test_servo_velocity_capped() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
+    cfg.jogSpeed = 1.0;
+    cfg.maxSpeed = 600.0;  // maxVel = 10 mm/s
+    api.motorX = 0.0;
     state.pendant.axisCode = xhc::kAxisX;
-    state.jogMode = JogMode::Continuous;
+    state.stepSize = 10.0;
+    state.pendant.jogCounts.store(1);  // error 10 -> vel 50 -> capped 10
+
+    JogController jc(api, state, cfg);
+    jc.tick();
+
+    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_NEAR(api.jogs[0].x, 10.0, 1e-9);
+}
+
+static void test_servo_negative_direction() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    cfg.jogSpeed = 1.0;
+    api.motorY = 0.0;
+    state.pendant.axisCode = xhc::kAxisY;
+    state.stepSize = 1.0;
+    state.pendant.jogCounts.store(-1);  // error -1 -> vel -5
+
+    JogController jc(api, state, cfg);
+    jc.tick();
+
+    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_NEAR(api.jogs[0].y, -5.0, 1e-9);
+}
+
+static void test_servo_a_axis() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    cfg.jogSpeed = 1.0;
+    api.motorA = 0.0;
+    state.pendant.axisCode = xhc::kAxisA;
+    state.stepSize = 0.1;
+    state.pendant.jogCounts.store(5);  // error 0.5 -> vel 2.5
+
+    JogController jc(api, state, cfg);
+    jc.tick();
+
+    CHECK_EQ(api.jogs.size(), 0u);
+    CHECK_EQ(api.jogs9.size(), 1u);
+    CHECK(!api.jogs9[0].step);
+    CHECK_NEAR(api.jogs9[0].a, 2.5, 1e-9);
+}
+
+static void test_servo_accumulates_target() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    cfg.jogSpeed = 1.0;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
 
     JogController jc(api, state, cfg);
     state.pendant.jogCounts.store(1);
-    jc.tick();
-    CHECK_EQ(api.jogStops, 0);
+    jc.tick();  // error 1 -> vel 5
+    state.pendant.jogCounts.store(2);
+    jc.tick();  // error 3 -> vel 15
 
-    jc.tick(); // no new counts -> continuous motion must stop
+    CHECK_EQ(api.jogs.size(), 2u);
+    CHECK_NEAR(api.jogs[0].x, 5.0, 1e-9);
+    CHECK_NEAR(api.jogs[1].x, 15.0, 1e-9);
+}
+
+static void test_servo_hysteresis() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(5);
+    jc.tick();  // error 5 -> engage
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    api.motorX = 5.0;
+    jc.tick();  // error 0 -> stop
+    CHECK_EQ(api.jogStops, 1);
+
+    api.motorX = 4.9;  // error 0.1 < start threshold 0.3 -> no re-engage
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
     CHECK_EQ(api.jogStops, 1);
 }
 
-static void test_jog_blocked_by_estop() {
+static void test_servo_jogspeed_division() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    cfg.jogSpeed = 12.0;  // default: Jog value = vel / 12
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+    state.pendant.jogCounts.store(2);  // error 2 -> vel 10 -> jog value 10/12
+
+    JogController jc(api, state, cfg);
+    jc.tick();
+
+    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_NEAR(api.jogs[0].x, 10.0 / 12.0, 1e-9);
+}
+
+static void test_servo_no_reissue_similar_velocity() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(2);
+    jc.tick();  // error 2 -> vel 10
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    api.motorX = 0.1;  // error 1.9 -> vel 9.5, |9.5-10| < 1 -> no re-issue
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    api.motorX = 0.5;  // error 1.5 -> vel 7.5, |7.5-10| > 1 -> re-issue
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 2u);
+}
+
+static void test_servo_blocked_by_estop() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
     state.pendant.axisCode = xhc::kAxisX;
-    state.jogMode = JogMode::Step;
     state.machine.estop = true;
     state.pendant.jogCounts.store(5);
 
@@ -241,15 +329,14 @@ static void test_jog_blocked_by_estop() {
     jc.tick();
 
     CHECK_EQ(api.jogs.size(), 0u);
-    CHECK_EQ(api.jogs9.size(), 0u);
+    CHECK_EQ(api.moveAxes.size(), 0u);
 }
 
-static void test_jog_disabled_in_attach_mode() {
+static void test_servo_disabled_in_attach_mode() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
     state.pendant.axisCode = xhc::kAxisX;
-    state.jogMode = JogMode::Step;
     state.jogEnabled = false;
     state.pendant.jogCounts.store(5);
 
@@ -257,6 +344,7 @@ static void test_jog_disabled_in_attach_mode() {
     jc.tick();
 
     CHECK_EQ(api.jogs.size(), 0u);
+    CHECK_EQ(api.moveAxes.size(), 0u);
 }
 
 static void test_override_feed() {
@@ -264,7 +352,7 @@ static void test_override_feed() {
     SharedState state;
     JoggingConfig cfg;
     cfg.overrideStep = 10.0;
-    api.params["SpeedFeedOverride"] = 1.0;
+    api.params["_ovrd_speedfeed"] = 1.0;
     state.pendant.axisCode = xhc::kAxisFeed;
     state.pendant.jogCounts.store(2);
 
@@ -272,7 +360,7 @@ static void test_override_feed() {
     jc.tick();
 
     CHECK_EQ(api.setParams.size(), 1u);
-    CHECK_EQ(api.setParams[0].first, std::string("SpeedFeedOverride"));
+    CHECK_EQ(api.setParams[0].first, std::string("_ovrd_speedfeed"));
     CHECK_NEAR(api.setParams[0].second, 1.2, 1e-9);
 }
 
@@ -281,7 +369,7 @@ static void test_override_spindle_clamped() {
     SharedState state;
     JoggingConfig cfg;
     cfg.overrideStep = 10.0;
-    api.params["SpeedSpindleOverride"] = 2.0;
+    api.params["_ovrd_spindle"] = 2.0;
     state.pendant.axisCode = xhc::kAxisSpindle;
     state.pendant.jogCounts.store(30); // +300% -> clamp to 250%
 
@@ -289,7 +377,7 @@ static void test_override_spindle_clamped() {
     jc.tick();
 
     CHECK_EQ(api.setParams.size(), 1u);
-    CHECK_EQ(api.setParams[0].first, std::string("SpeedSpindleOverride"));
+    CHECK_EQ(api.setParams[0].first, std::string("_ovrd_spindle"));
     CHECK_NEAR(api.setParams[0].second, 2.5, 1e-9);
 }
 
@@ -369,11 +457,11 @@ static void test_button_feed_override() {
     a.action = "feed_override";
     a.delta = 20.0;
     cfg.buttons.emplace_back("macro_1", a);
-    api.params["SpeedFeedOverride"] = 1.0;
+    api.params["_ovrd_speedfeed"] = 1.0;
     ButtonHandler bh(api, state, cfg);
 
     CHECK(bh.onPress("macro_1"));
-    CHECK_NEAR(api.params["SpeedFeedOverride"], 1.2, 1e-9);
+    CHECK_NEAR(api.params["_ovrd_speedfeed"], 1.2, 1e-9);
 }
 
 static void test_button_gcode() {
@@ -503,8 +591,8 @@ static void test_display_always_sends_when_axis_off() {
 
 static void test_display_frame_encoding() {
     MockTngApi api; SharedState state; Config cfg = makeConfig();
-    api.params["SpeedFeedOverride"] = 1.0;
-    api.params["SpeedSpindleOverride"] = 0.5;
+    api.params["_ovrd_speedfeed"] = 1.0;
+    api.params["_ovrd_spindle"] = 0.5;
     api.speed = 50.0;
     api.spindle = 200.0;
     state.pendant.axisCode = xhc::kAxisX;
@@ -542,13 +630,17 @@ static void test_display_frame_encoding() {
 } // namespace
 
 int main() {
-    test_jog_step_x();
-    test_jog_step_negative_y();
-    test_jog_a_axis_uses_jog9();
-    test_jog_continuous_speed();
-    test_jog_continuous_idle_stops();
-    test_jog_blocked_by_estop();
-    test_jog_disabled_in_attach_mode();
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    test_servo_velocity();
+    test_servo_velocity_capped();
+    test_servo_negative_direction();
+    test_servo_a_axis();
+    test_servo_accumulates_target();
+    test_servo_jogspeed_division();
+    test_servo_hysteresis();
+    test_servo_no_reissue_similar_velocity();
+    test_servo_blocked_by_estop();
+    test_servo_disabled_in_attach_mode();
     test_override_feed();
     test_override_spindle_clamped();
 

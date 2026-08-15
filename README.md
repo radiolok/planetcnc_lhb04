@@ -17,12 +17,13 @@ LCD-дисплей пульта (координаты, подача, оборо�
 - **Чтение пульта** — опрос HID-пакетов (report `0x04`, 6 или 8 байт в
   зависимости от устройства) с частотой 100 Гц, edge-детекция кнопок с
   debounce 50 мс, накопление импульсов маховика.
-- **Джог маховиком (MPG)** — режимы Step и Continuous; выбор оси ручкой
-  (X/Y/Z/A); шаг определяется положением шагового переключателя
-  (`0.001 / 0.01 / 0.1 / 1.0` мм).
+- **Джог маховиком (MPG)** — позиционный режим: колесо задаёт целевую
+  координату, а контроллер плавно едет к ней (`MoveAxis`), без рывков
+  пошагового джога; выбор оси ручкой (X/Y/Z/A); шаг определяется положением
+  шагового переключателя (`0.001 / 0.01 / 0.1 / 1.0` мм).
 - **Override подачи и шпинделя** — вращение маховика при ручке в положении
-  Feed/Spindle изменяет `SpeedFeedOverride` / `SpeedSpindleOverride` через
-  `SetParam`.
+  Feed/Spindle изменяет `_ovrd_speedfeed` / `_ovrd_spindle` через
+  `SetParam` (имена подтверждены на реальном контроллере; 1.0 = 100%).
 - **LCD-дисплей** — координаты (формат `±XXXX.XXX`), % override, подача
   (мм/мин) и обороты шпинделя (RPM); пакет дисплея кодируется по эталону
   LinuxCNC `xhc-hb04`.
@@ -93,11 +94,12 @@ cmake --build build -j
 Результат — `build/Release/mpgd.exe` (Windows) или `build/mpgd` (Linux).
 Все зависимости линкуются статически, исполняемый файл самодостаточен.
 
-Вместе с демоном собирается тестовая GUI-утилита `mpg_gui.exe` (см. раздел
-«Диагностика» и [`tools/README.md`](tools/README.md)):
+Вместе с демоном собираются диагностические утилиты (см. раздел «Диагностика»
+и [`tools/README.md`](tools/README.md)):
 
 ```powershell
 cmake --build build --config Release --target mpg_gui
+cmake --build build --config Release --target tng_probe
 ```
 
 ### Запуск тестов
@@ -154,6 +156,25 @@ GUI-утилита **`mpg_gui`** — оконное приложение, чит
 build\Release\mpg_gui.exe
 ```
 
+Для проверки интеграции с **PlanetCNC TNG** есть консольная утилита
+**`tng_probe`** (этап 3 — валидация на реальном контроллере):
+
+```powershell
+# статус и состояние контроллера (attach к запущенной TNG, только чтение)
+build\Release\tng_probe.exe --attach --lib "C:\Program Files\PlanetCNC\PlanetCNCLib64.dll" status
+# параметры (имена override/джога) через GetParam
+build\Release\tng_probe.exe --attach --lib "C:\Program Files\PlanetCNC\PlanetCNCLib64.dll" params
+# резолв именованных команд через GetCmdId
+build\Release\tng_probe.exe --attach --lib "C:\Program Files\PlanetCNC\PlanetCNCLib64.dll" commands
+# джог на реальном станке (in-process, требует прав администратора и
+# свободной оси; --setstep задаёт _jog_step для step-режима)
+build\Release\tng_probe.exe --lib "C:\Program Files\PlanetCNC\PlanetCNCLib64.dll" jog --mode step --axis X --value 1.0 --setstep 1.0
+build\Release\tng_probe.exe --lib "C:\Program Files\PlanetCNC\PlanetCNCLib64.dll" jog --mode cont --axis X --value 20 --seconds 2
+```
+
+`--lib` указывает на `PlanetCNCLib64.dll`; при пустом `--lib` библиотека
+ищется по стандартному пути поиска DLL (или положите её рядом с exe).
+
 Полезные режимы демона для диагностики:
 
 - `mpgd --list` — список HID-устройств (VID/PID, строки производителя);
@@ -179,11 +200,11 @@ planetcnc:
 
 jogging:
   step_sizes: [0.001, 0.01, 0.1, 1.0]   # мм
-  max_speed: 1000.0                     # мм/мин
-  mode: "step"                          # step | continuous
+  max_speed: 1000.0                     # мм/мин (скорость позиционного следования)
+  mode: "step"                          # step | continuous (колесо игнорирует)
   override_step: 10.0                   # % на клик маховика
-  feed_override_param: "SpeedFeedOverride"
-  spindle_override_param: "SpeedSpindleOverride"
+  feed_override_param: "_ovrd_speedfeed"
+  spindle_override_param: "_ovrd_spindle"
 
 polling:
   usb_hz: 100
@@ -351,18 +372,22 @@ LinuxCNC `xhc-hb04.cc` для устройства `10CE:EB70`.
 ## Безопасность
 
 - Блокировка джога при E-Stop (`IsEStop()`).
-- `JogStop()` при простое маховика (continuous), потере связи и завершении.
+- Остановка движения при потере связи и завершении (`Stop()`).
 - Клампинг накопленных импульсов (защита от переполнения, `JogMath.h`).
 - Debounce кнопок 50 мс.
-- Ограничение скорости джога через `max_speed` в конфиге.
+- Ограничение скорости позиционного следования через `max_speed` (мм/мин).
 
 ---
 
 ## Ограничения и дальнейшие шаги
 
-- Точная семантика `Jog(step, x, y, z)` (шаг vs скорость в normal-режиме) и
-  имена параметров скорости джога уточняются на реальном контроллере (Phase 3
-  плана); имена override-параметров настраиваются в YAML.
+- Семантика `Jog`/`MoveAxis` уточнена на реальном контроллере (Mk3/4):
+  `Jog(step=true)` двигает ось на `_jog_step` рывком (величина `x/y/z`
+  игнорируется), поэтому для колеса используется позиционный режим —
+  `MoveAxis(speed, axis, target)` едет к абсолютной координате плавно.
+  Скорость `MoveAxis` — значение/10 = мм/мин (для 600 мм/мин передавать
+  6000). Джог требует включённых моторов (`M10 P1`), а in-process запуск —
+  прав администратора.
 - Дисплей пишется через feature report (SET_REPORT `0x06`). На Windows пульт
   перечисляется как несколько HID-коллекций: входной отчёт (`0x04`) и
   feature-отчёт дисплея (`0x06`) живут в разных device-узлах, поэтому демону

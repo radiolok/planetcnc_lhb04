@@ -15,6 +15,7 @@
 
 #include <hidapi.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -150,7 +151,8 @@ int main(int argc, char** argv) {
 
     // --- TNG API (unless sniffing) ----------------------------------------
     mpgd::TngApi api;
-    bool tngReady = false;
+    std::thread tngThread;
+    std::atomic<bool> tngExited{false};
     if (!opts.sniff) {
         std::string err;
         if (!api.load(cfg.planetcnc.libPath, err)) {
@@ -168,34 +170,32 @@ int main(int argc, char** argv) {
             mpgd::logWarn("attach mode: jogging disabled (Jog is not available "
                           "through the external pipe interface)");
         } else {
-            bool ok;
-            if (cfg.planetcnc.profile.empty()) {
-                ok = api.run(opts.noGui);
-            } else {
-                ok = api.runProfile(opts.noGui, cfg.planetcnc.profile);
-            }
-            if (!ok) {
-                mpgd::logError("failed to start TNG (Run)");
-                hid_exit();
-                return 1;
-            }
-        }
+            // Run() blocks for the lifetime of TNG: it runs the TNG message
+            // loop on the calling thread and returns only after Exit(). Run it
+            // on a dedicated thread and drive the API from the worker threads.
+            tngThread = std::thread([&] {
+                if (cfg.planetcnc.profile.empty()) {
+                    api.run(opts.noGui);
+                } else {
+                    api.runProfile(opts.noGui, cfg.planetcnc.profile);
+                }
+                tngExited.store(true);
+            });
 
-        // Wait for TNG initialization (init callback or IsInitialized).
-        // Only meaningful for in-process mode; in attach mode TNG runs
-        // externally and IsInitialized() stays false.
-        bool tngReady = true;
-        if (!opts.attach) {
+            // Wait for TNG initialization (init callback or IsInitialized).
             int waited = 0;
             while (!state.shutdown.load() && !api.isInitialized() && waited < 30000) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 waited += 100;
             }
-            tngReady = api.isInitialized();
-            if (!tngReady) {
-                mpgd::logWarn("TNG did not report initialized within 30s; continuing anyway");
-            } else {
+            if (api.isInitialized()) {
                 mpgd::logInfo("TNG initialized");
+                // Enable axis motors (M10 P1): PlanetCNC jog returns ok but
+                // does not move the axes while the motor enable signal is off.
+                api.startCode("M10 P1");
+            } else {
+                mpgd::logWarn("TNG did not report initialized within 30s; "
+                              "continuing anyway");
             }
         }
     }
@@ -242,7 +242,17 @@ int main(int argc, char** argv) {
     }
 
     if (!opts.sniff && !opts.attach) {
-        api.exitTng();
+        api.exitTngForce();
+        // Run() should return after ExitForce; give it a bounded grace period
+        // and then let the OS clean up the TNG thread if it is still winding
+        // down (graceful shutdown semantics are finalized in AC-06).
+        for (int i = 0; i < 50 && !tngExited.load(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (tngThread.joinable()) {
+            if (tngExited.load()) tngThread.join();
+            else tngThread.detach();
+        }
     }
 
     mpgd::Logger::shutdown();

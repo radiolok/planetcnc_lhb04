@@ -32,8 +32,14 @@ struct JoggingConfig {
     double maxSpeed = 1000.0;        // mm/min
     std::string mode = "step";       // "step" | "continuous"
     double overrideStep = 10.0;      // percent per wheel click for override
-    std::string feedOverrideParam = "SpeedFeedOverride";
-    std::string spindleOverrideParam = "SpeedSpindleOverride";
+    std::string feedOverrideParam = "_ovrd_speedfeed";
+    std::string spindleOverrideParam = "_ovrd_spindle";
+    // The controller's jog speed (mm/s). PlanetCNC Jog() treats the velocity
+    // argument as a MULTIPLIER of this speed (value * jogSpeed = mm/s, capped
+    // at the controller max speed), so mpgd divides its desired mm/s by this
+    // to produce the Jog value. Matches the _jog_speed controller setting
+    // (validated on Mk3/4: _jog_speed = 12 -> value 0.5 jogged at 6 mm/s).
+    double jogSpeed = 12.0;
 };
 
 struct PollingConfig {

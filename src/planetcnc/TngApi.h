@@ -81,13 +81,14 @@ public:
     unsigned infoJogPot() override;
     bool infoWorkPosition3(double& x, double& y, double& z) override;
     bool infoMotorPosition3(double& x, double& y, double& z) override;
+    double infoMotorPosition(int axis) override;
 
     // --- Jog / move --------------------------------------------------------
     bool jog(bool step, double x, double y, double z) override;
     bool jog9(bool step, double x, double y, double z,
               double a, double b, double c, double u, double v, double w) override;
     bool jogStop() override;
-    bool moveAxis(double speed, int axis, double value);
+    bool moveAxis(double speed, int axis, double value) override;
 
     // --- Callbacks ---------------------------------------------------------
     // Installed with process-lifetime static callbacks (see .cpp). The init
@@ -135,6 +136,7 @@ private:
     tng::Fn_InfoJogPot      fnInfoJogPot_ = nullptr;
     tng::Fn_InfoPos3        fnInfoWorkPosition3_ = nullptr;
     tng::Fn_InfoPos3        fnInfoMotorPosition3_ = nullptr;
+    tng::Fn_InfoPosAxis     fnInfoMotorPosition_ = nullptr;
     tng::Fn_Jog             fnJog_ = nullptr;
     tng::Fn_Jog9            fnJog9_ = nullptr;
     tng::Fn_JogStop         fnJogStop_ = nullptr;

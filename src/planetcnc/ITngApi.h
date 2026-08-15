@@ -45,6 +45,7 @@ public:
     virtual unsigned infoJogPot() = 0;
     virtual bool infoWorkPosition3(double& x, double& y, double& z) = 0;
     virtual bool infoMotorPosition3(double& x, double& y, double& z) = 0;
+    virtual double infoMotorPosition(int axis) = 0;
 
     // --- Jog / move --------------------------------------------------------
     virtual bool jog(bool step, double x, double y, double z) = 0;
@@ -52,6 +53,9 @@ public:
                       double a, double b, double c,
                       double u, double v, double w) = 0;
     virtual bool jogStop() = 0;
+    // Move a single axis to an absolute motor position at `speed`
+    // (PlanetCNC MoveAxis). `axis` is the axis index (0=X..8=W).
+    virtual bool moveAxis(double speed, int axis, double value) = 0;
 };
 
 } // namespace mpgd

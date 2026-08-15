@@ -6,17 +6,33 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace mpgd {
 
 namespace {
 constexpr double kOverrideMin = 0.0;
 constexpr double kOverrideMax = 2.5;
+// Velocity servo parameters.
+//
+// PlanetCNC Jog() treats the velocity argument as a MULTIPLIER of the jog
+// speed (_jog_speed, mm/s): actual mm/s = value * jogSpeed, capped at the
+// controller max speed (validated on Mk3/4: value 0.5 -> 6 mm/s, value 5 ->
+// 60 mm/s with _jog_speed = 12). The servo works in mm/s and divides by
+// cfg_.jogSpeed when issuing Jog().
+constexpr double kServoGain = 5.0;          // 1/s: vel = error * gain
+constexpr double kServoMaxDecel = 200.0;    // mm/s^2 (== _motion_maxdec)
+constexpr double kServoStopDeadbandMm = 0.05;
+constexpr double kServoStartDeadbandMm = 0.15;
+// Minimum change in commanded velocity that warrants re-issuing Jog().
+constexpr double kServoVelReissueMmS = 1.0;
 } // namespace
 
 JogController::JogController(ITngApi& api, SharedState& state,
                              const JoggingConfig& cfg)
-    : api_(api), state_(state), cfg_(cfg) {}
+    : api_(api), state_(state), cfg_(cfg) {
+    for (double& t : target_) t = std::numeric_limits<double>::quiet_NaN();
+}
 
 int JogController::drainCounts() {
     int counts = state_.pendant.jogCounts.exchange(0);
@@ -27,29 +43,23 @@ int JogController::drainCounts() {
     return clamped;
 }
 
-void JogController::ensureStopped(bool& wasStopped) {
-    if (!wasStopped) {
+void JogController::stopServo() {
+    if (servoActive_) {
         api_.jogStop();
-        wasStopped = true;
+        servoActive_ = false;
+        servoAxis_ = -1;
+        lastVel_ = 0.0;
     }
 }
 
 void JogController::stopNow() {
     state_.pendant.jogCounts.store(0);
-    api_.jogStop();
-    stopped_ = true;
+    stopServo();
+    for (double& t : target_) t = std::numeric_limits<double>::quiet_NaN();
 }
 
 void JogController::tick() {
-    int counts = drainCounts();
-    if (counts == 0) {
-        // In continuous mode, wheel idle means motion should stop.
-        if (!stopped_ && state_.jogMode == JogMode::Continuous) {
-            api_.jogStop();
-            stopped_ = true;
-        }
-        return;
-    }
+    const int counts = drainCounts();
 
     bool jogEnabled;
     bool estop;
@@ -65,30 +75,27 @@ void JogController::tick() {
         spindleSel = state_.spindleOverrideSelected();
     }
 
-    if (estop) {
-        logWarn("jog: blocked by e-stop");
-        ensureStopped(stopped_);
-        return;
-    }
-
-    if (!jogEnabled) {
-        logDebug("jog: disabled (attach mode), ignoring %d counts", counts);
+    if (estop || !jogEnabled) {
+        stopServo();
         return;
     }
 
     if (axis >= 0) {
-        processJog(axis, counts);
-    } else if (feedSel) {
-        processOverride(/*spindle=*/false, counts);
-    } else if (spindleSel) {
-        processOverride(/*spindle=*/true, counts);
+        if (counts != 0) updateTarget(axis, counts);
+        runServo(axis);
     } else {
-        // Rotary in OFF position: no axis and no override target.
-        ensureStopped(stopped_);
+        stopServo();
+        if (feedSel && counts != 0) {
+            processOverride(/*spindle=*/false, counts);
+        } else if (spindleSel && counts != 0) {
+            processOverride(/*spindle=*/true, counts);
+        }
     }
 }
 
-void JogController::processJog(int axis, int counts) {
+void JogController::updateTarget(int axis, int counts) {
+    if (axis < 0 || axis >= 6) return;
+
     double stepSize;
     {
         std::lock_guard<std::mutex> lk(state_.mutex);
@@ -96,33 +103,81 @@ void JogController::processJog(int axis, int counts) {
     }
     if (stepSize <= 0.0) stepSize = 0.001;
 
-    const double sign = (counts < 0) ? -1.0 : 1.0;
-
-    // Axis vector: X, Y, Z, A, B, C (index 0..5).
-    double v[6] = {0, 0, 0, 0, 0, 0};
-    if (axis >= 0 && axis < 6) {
-        if (state_.jogMode == JogMode::Step) {
-            v[axis] = jogDistanceMm(counts, stepSize);
-        } else {
-            // Continuous mode: speed bounded by cfg_.maxSpeed; the exact
-            // interpretation of Jog(speed) is validated on real hardware.
-            v[axis] = sign * std::max(1.0, cfg_.maxSpeed);
+    if (!std::isfinite(target_[axis])) {
+        const double pos = api_.infoMotorPosition(axis);
+        if (!std::isfinite(pos)) {
+            logWarn("jog: cannot read motor position for axis %d", axis);
+            return;
         }
+        target_[axis] = pos;
     }
 
-    const bool step = (state_.jogMode == JogMode::Step);
+    target_[axis] += static_cast<double>(counts) * stepSize;
+}
+
+void JogController::runServo(int axis) {
+    if (axis < 0 || axis >= 6) return;
+
+    // Switching axes: stop the previous axis's servo immediately.
+    if (servoActive_ && servoAxis_ != axis) stopServo();
+
+    if (!std::isfinite(target_[axis])) return;
+
+    const double current = api_.infoMotorPosition(axis);
+    if (!std::isfinite(current)) return;
+
+    const double error = target_[axis] - current;
+    const double absErr = std::fabs(error);
+
+    if (servoActive_) {
+        if (absErr <= kServoStopDeadbandMm) {
+            logInfo("servo stop  axis=%d target=%.3f pos=%.3f err=%.3f",
+                    axis, target_[axis], current, error);
+            stopServo();
+            return;
+        }
+    } else {
+        if (absErr <= kServoStartDeadbandMm) return;
+    }
+
+    const double maxVel = std::max(1.0, cfg_.maxSpeed / 60.0);
+    // Velocity limited by the braking distance so the axis can decelerate to
+    // zero within the remaining error (no overshoot -> no limit cycle).
+    double vel = std::min(kServoGain * absErr,
+                          std::sqrt(2.0 * kServoMaxDecel * absErr));
+    vel = std::min(vel, maxVel);
+    vel = std::copysign(vel, error);
+
+    // Only re-issue Jog() when the velocity changes meaningfully. Re-issuing
+    // on every tick makes the controller re-ramp and overshoot, which is what
+    // drove the limit-cycle oscillation.
+    if (servoActive_ && servoAxis_ == axis &&
+        std::fabs(vel - lastVel_) < kServoVelReissueMmS) {
+        return;
+    }
+
+    double v[6] = {0, 0, 0, 0, 0, 0};
+    // Jog() velocity argument is a multiplier of the controller's jog speed:
+    // actual mm/s = value * jogSpeed. Convert the desired mm/s to the value.
+    const double jogSpeed = std::max(0.1, cfg_.jogSpeed);
+    v[axis] = vel / jogSpeed;
+
     bool ok;
     if (axis < 3) {
-        ok = api_.jog(step, v[0], v[1], v[2]);
+        ok = api_.jog(false, v[0], v[1], v[2]);
     } else {
-        // A/B/C axes require the 9-axis variant.
-        ok = api_.jog9(step, v[0], v[1], v[2], v[3], v[4], v[5], 0, 0, 0);
+        ok = api_.jog9(false, v[0], v[1], v[2], v[3], v[4], v[5], 0, 0, 0);
     }
-
     if (ok) {
-        stopped_ = false;
+        if (!servoActive_) {
+            logInfo("servo start axis=%d target=%.3f pos=%.3f err=%.3f vel=%.2f",
+                    axis, target_[axis], current, error, vel);
+        }
+        servoActive_ = true;
+        servoAxis_ = axis;
+        lastVel_ = vel;
     } else {
-        logWarn("jog: Jog%s failed", step ? "(step)" : "(continuous)");
+        logWarn("jog: velocity jog on axis %d failed", axis);
     }
 }
 
@@ -138,7 +193,6 @@ void JogController::processOverride(bool spindle, int counts) {
     } else {
         logWarn("override: SetParam(%s) failed", param.c_str());
     }
-    ensureStopped(stopped_);
 }
 
 } // namespace mpgd

@@ -65,6 +65,7 @@ void applyJogging(const YAML::Node& n, JoggingConfig& c) {
     if (n["override_step"]) c.overrideStep = n["override_step"].as<double>(c.overrideStep);
     if (n["feed_override_param"]) c.feedOverrideParam = n["feed_override_param"].as<std::string>(c.feedOverrideParam);
     if (n["spindle_override_param"]) c.spindleOverrideParam = n["spindle_override_param"].as<std::string>(c.spindleOverrideParam);
+    if (n["jog_speed"]) c.jogSpeed = n["jog_speed"].as<double>(c.jogSpeed);
 }
 
 void applyButtons(const YAML::Node& n, Config& c) {
