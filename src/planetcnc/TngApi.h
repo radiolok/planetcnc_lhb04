@@ -1,5 +1,6 @@
 #pragma once
 
+#include "planetcnc/ITngApi.h"
 #include "TNG_API.h"
 
 #include <atomic>
@@ -16,7 +17,7 @@ namespace mpgd {
 // Every call is serialized through a single mutex because the SDK is not
 // documented to be thread-safe while USB polling, jog processing and display
 // updates run concurrently.
-class TngApi {
+class TngApi : public ITngApi {
 public:
     TngApi() = default;
     ~TngApi();
@@ -41,51 +42,51 @@ public:
     int getVer();
 
     // --- Run status --------------------------------------------------------
-    bool isRunning();
+    bool isRunning() override;
     bool isRunningExt();
-    bool isInitialized();
-    bool isControllerReady();
-    bool isIdle();
-    bool isEStop();
+    bool isInitialized() override;
+    bool isControllerReady() override;
+    bool isIdle() override;
+    bool isEStop() override;
     bool isStop();
-    bool isPause();
+    bool isPause() override;
 
     // --- Machine commands --------------------------------------------------
     bool estop(bool on);
-    bool estopToggle();
-    bool stop();
-    bool pause(bool on);
-    bool pauseToggle();
-    bool start();
+    bool estopToggle() override;
+    bool stop() override;
+    bool pause(bool on) override;
+    bool pauseToggle() override;
+    bool start() override;
 
     // --- Generic commands --------------------------------------------------
     int getCmdCount();
-    int getCmdId(const std::string& name);
+    int getCmdId(const std::string& name) override;
     bool isCmdEnabled(int id);
-    bool cmdExec(int id);
+    bool cmdExec(int id) override;
     bool cmdExecStr(int id, const std::string& str);
     bool cmdExecVal(int id, double val);
 
     // --- Parameters --------------------------------------------------------
-    bool setParam(const std::string& name, double value);
-    double getParam(const std::string& name);
+    bool setParam(const std::string& name, double value) override;
+    double getParam(const std::string& name) override;
 
     // --- G-code helpers ----------------------------------------------------
-    bool startCode(const std::string& gcode);
+    bool startCode(const std::string& gcode) override;
     bool openCode(const std::string& gcode);
 
     // --- Info --------------------------------------------------------------
-    double infoSpeed();
-    double infoSpindle();
-    unsigned infoJogPot();
-    bool infoWorkPosition3(double& x, double& y, double& z);
-    bool infoMotorPosition3(double& x, double& y, double& z);
+    double infoSpeed() override;
+    double infoSpindle() override;
+    unsigned infoJogPot() override;
+    bool infoWorkPosition3(double& x, double& y, double& z) override;
+    bool infoMotorPosition3(double& x, double& y, double& z) override;
 
     // --- Jog / move --------------------------------------------------------
-    bool jog(bool step, double x, double y, double z);
+    bool jog(bool step, double x, double y, double z) override;
     bool jog9(bool step, double x, double y, double z,
-              double a, double b, double c, double u, double v, double w);
-    bool jogStop();
+              double a, double b, double c, double u, double v, double w) override;
+    bool jogStop() override;
     bool moveAxis(double speed, int axis, double value);
 
     // --- Callbacks ---------------------------------------------------------

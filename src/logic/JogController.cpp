@@ -1,7 +1,7 @@
 #include "logic/JogController.h"
 
 #include "logic/JogMath.h"
-#include "planetcnc/TngApi.h"
+#include "planetcnc/ITngApi.h"
 #include "utils/Logger.h"
 
 #include <algorithm>
@@ -14,7 +14,7 @@ constexpr double kOverrideMin = 0.0;
 constexpr double kOverrideMax = 2.5;
 } // namespace
 
-JogController::JogController(TngApi& api, SharedState& state,
+JogController::JogController(ITngApi& api, SharedState& state,
                              const JoggingConfig& cfg)
     : api_(api), state_(state), cfg_(cfg) {}
 

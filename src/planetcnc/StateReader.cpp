@@ -1,6 +1,6 @@
 #include "planetcnc/StateReader.h"
 
-#include "planetcnc/TngApi.h"
+#include "planetcnc/ITngApi.h"
 
 namespace mpgd {
 

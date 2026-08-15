@@ -7,7 +7,7 @@
 
 namespace mpgd {
 
-class TngApi;
+class ITngApi;
 struct Config;
 
 // Builds the LCD display frame (6 x 8-byte reports) from the shared machine
@@ -19,14 +19,14 @@ public:
     using Report = std::array<uint8_t, kReportSize>;
     using Frame = std::array<Report, kReportsCount>;
 
-    DisplayUpdater(TngApi& api, SharedState& state, const Config& cfg);
+    DisplayUpdater(ITngApi& api, SharedState& state, const Config& cfg);
 
     // Builds one display frame into `out`. Returns false when the frame should
     // not be sent (axis rotary OFF and polling.display_always is false).
     bool build(Frame& out);
 
 private:
-    TngApi& api_;
+    ITngApi& api_;
     SharedState& state_;
     const Config& cfg_;
 };

@@ -262,6 +262,7 @@ buttons:
 ```
 mpgd/
 ├── CMakeLists.txt
+├── PLAN.md                           # план работ и статус
 ├── config/mpgd.yaml
 ├── include/TNG_API.h                 # декларации C API (LoadLibrary, не линкуется)
 ├── src/
@@ -273,6 +274,7 @@ mpgd/
 │   │   ├── HidDevice.*               # обёртка hidapi
 │   │   └── XhcPendant.*              # state machine пульта (edge/debounce)
 │   ├── planetcnc/
+│   │   ├── ITngApi.h                 # интерфейс TNG-API (mock в тестах)
 │   │   ├── TngApi.*                  # динамическая загрузка SDK + mutex
 │   │   └── StateReader.*             # чтение Info*/состояния
 │   ├── logic/

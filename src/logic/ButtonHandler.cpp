@@ -1,13 +1,13 @@
 #include "logic/ButtonHandler.h"
 
-#include "planetcnc/TngApi.h"
+#include "planetcnc/ITngApi.h"
 #include "utils/Logger.h"
 
 #include <algorithm>
 
 namespace mpgd {
 
-ButtonHandler::ButtonHandler(TngApi& api, SharedState& state, const Config& cfg)
+ButtonHandler::ButtonHandler(ITngApi& api, SharedState& state, const Config& cfg)
     : api_(api), state_(state), cfg_(cfg) {}
 
 bool ButtonHandler::onPress(const std::string& buttonName) {

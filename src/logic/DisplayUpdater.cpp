@@ -1,14 +1,14 @@
 #include "logic/DisplayUpdater.h"
 
 #include "config/ConfigManager.h"
-#include "planetcnc/TngApi.h"
+#include "planetcnc/ITngApi.h"
 #include "usb/PacketParser.h"
 
 #include <cmath>
 
 namespace mpgd {
 
-DisplayUpdater::DisplayUpdater(TngApi& api, SharedState& state,
+DisplayUpdater::DisplayUpdater(ITngApi& api, SharedState& state,
                                const Config& cfg)
     : api_(api), state_(state), cfg_(cfg) {}
 
