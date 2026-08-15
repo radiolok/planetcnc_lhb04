@@ -1,0 +1,36 @@
+# Build output
+/build/
+build/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+*.cmake.user
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.vcxproj.user
+*.sln
+*.vcxproj
+
+# Compiled artifacts
+*.exe
+*.dll
+*.lib
+*.obj
+*.o
+*.a
+*.so
+*.pdb
+*.ilk
+*.exp
+*.idb
+
+# Logs
+*.log
+logs/

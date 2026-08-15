@@ -1,0 +1,66 @@
+# mpgd configuration
+# XHC LHB04 pendant <-> PlanetCNC TNG adapter
+
+device:
+  vendor_id: 0x10CE
+  product_ids: [0xEB70, 0xEB71, 0xEB93]
+  auto_detect: true
+  # Optional: verify the XOR checksum of incoming reports. The reference
+  # driver (LinuxCNC xhc-hb04) does not verify one, so this is off by default
+  # and should be validated against a real packet capture before enabling.
+  verify_checksum: false
+
+planetcnc:
+  # Profile name for RunProfile ("" = default profile).
+  profile: ""
+  # Explicit library path ("" = auto-detect PlanetCNCLib64.dll / .so).
+  lib_path: ""
+  # attach: connect to an already-running external TNG process.
+  attach: false
+
+jogging:
+  step_sizes: [0.001, 0.01, 0.1, 1.0]   # mm (stepsize sequence x 0.001)
+  max_speed: 1000.0                     # mm/min
+  mode: "step"                          # step | continuous
+  override_step: 10.0                   # percent per wheel click for override
+  feed_override_param: "SpeedFeedOverride"
+  spindle_override_param: "SpeedSpindleOverride"
+
+polling:
+  usb_hz: 100          # USB input poll rate
+  display_hz: 20       # LCD refresh rate
+  reconnect_ms: 2000   # USB reconnect interval
+  button_debounce_ms: 50
+  display_always: false  # keep sending LCD data when axis rotary = OFF
+
+logging:
+  level: "info"        # trace | debug | info | warn | error | critical | off
+  file: ""             # empty = console only
+
+# Button -> action mapping. Keys are the canonical button names (18-button
+# LHB04, xhc-hb04 layout2). Supported actions:
+#   estop, stop, start, pause, pause_toggle, toggle_start_pause,
+#   home_all, set_work_zero, set_work_zero_xy, set_work_zero_z,
+#   spindle_toggle, flood_toggle, mist_toggle,
+#   feed_override, spindle_override (use `delta` in percent),
+#   toggle_jog_mode, command (named TNG command in `cmd`), gcode (`cmd`),
+#   noop
+buttons:
+  reset:        { action: "estop" }
+  stop:         { action: "stop" }
+  start_pause:  { action: "toggle_start_pause" }
+  goto_zero:    { action: "noop" }
+  rewind:       { action: "noop" }
+  probe_z:      { action: "command", cmd: "Machine.Work_Position.Measure_Height" }
+  macro_3:      { action: "noop" }
+  half:         { action: "noop" }
+  zero:         { action: "set_work_zero" }
+  safe_z:       { action: "noop" }
+  home:         { action: "home_all" }
+  macro_1:      { action: "noop" }
+  macro_2:      { action: "noop" }
+  spindle:      { action: "spindle_toggle" }
+  step:         { action: "toggle_jog_mode" }
+  mode:         { action: "toggle_jog_mode" }
+  macro_6:      { action: "noop" }
+  macro_7:      { action: "noop" }

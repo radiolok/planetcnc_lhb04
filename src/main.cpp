@@ -1,0 +1,250 @@
+#include "config/ConfigManager.h"
+#include "logic/ButtonHandler.h"
+#include "logic/DisplayUpdater.h"
+#include "logic/JogController.h"
+#include "logic/SharedState.h"
+#include "planetcnc/StateReader.h"
+#include "planetcnc/TngApi.h"
+#include "threads/DisplayThread.h"
+#include "threads/JogThread.h"
+#include "threads/UsbPollThread.h"
+#include "usb/HidDevice.h"
+#include "usb/XhcPendant.h"
+#include "utils/Daemon.h"
+#include "utils/Logger.h"
+
+#include <hidapi.h>
+
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace {
+
+struct CliOptions {
+    std::string configPath = "mpgd.yaml";
+    std::string profile;
+    bool noGui = false;
+    bool attach = false;
+    bool sniff = false;
+    bool list = false;
+    bool help = false;
+};
+
+void printUsage(const char* argv0) {
+    std::printf(
+        "mpgd - XHC LHB04 pendant <-> PlanetCNC TNG adapter\n"
+        "\n"
+        "Usage: %s [options]\n"
+        "\n"
+        "Options:\n"
+        "  --config <path>   Path to the YAML config file (default: mpgd.yaml)\n"
+        "  --profile <name>  PlanetCNC profile name to load\n"
+        "  --no-gui          Run TNG headless (Run(true)); default runs with GUI\n"
+        "  --attach          Attach to an already-running external TNG process\n"
+        "  --sniff           Capture/log raw pendant packets only (no TNG)\n"
+        "  --list            List HID devices and exit\n"
+        "  --help            Show this help\n",
+        argv0);
+}
+
+bool parseArgs(int argc, char** argv, CliOptions& opts) {
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        auto need = [&](const char* flag) -> const char* {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "error: %s requires a value\n", flag);
+                return nullptr;
+            }
+            return argv[++i];
+        };
+
+        if (arg == "--config") {
+            const char* v = need("--config");
+            if (!v) return false;
+            opts.configPath = v;
+        } else if (arg == "--profile") {
+            const char* v = need("--profile");
+            if (!v) return false;
+            opts.profile = v;
+        } else if (arg == "--no-gui") {
+            opts.noGui = true;
+        } else if (arg == "--attach") {
+            opts.attach = true;
+        } else if (arg == "--sniff") {
+            opts.sniff = true;
+        } else if (arg == "--list") {
+            opts.list = true;
+        } else if (arg == "--help" || arg == "-h") {
+            opts.help = true;
+        } else {
+            std::fprintf(stderr, "error: unknown option '%s'\n", arg.c_str());
+            return false;
+        }
+    }
+    return true;
+}
+
+void listHidDevices() {
+    if (hid_init() != 0) {
+        std::fprintf(stderr, "hid_init failed\n");
+        return;
+    }
+    hid_device_info* devs = hid_enumerate(0x10CE, 0x0);
+    for (hid_device_info* d = devs; d; d = d->next) {
+        std::printf("VID 0x%04X PID 0x%04X  %ls  %ls  (%s)\n",
+                    d->vendor_id, d->product_id,
+                    d->manufacturer_string ? d->manufacturer_string : L"?",
+                    d->product_string ? d->product_string : L"?",
+                    d->path ? d->path : "");
+    }
+    hid_free_enumeration(devs);
+    hid_exit();
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    CliOptions opts;
+    if (!parseArgs(argc, argv, opts)) {
+        printUsage(argv[0]);
+        return 2;
+    }
+    if (opts.help) {
+        printUsage(argv[0]);
+        return 0;
+    }
+    if (opts.list) {
+        listHidDevices();
+        return 0;
+    }
+
+    // Load config (defaults overlaid with the file).
+    std::string cfgError;
+    mpgd::Config cfg = mpgd::ConfigManager::loadOrDefault(opts.configPath, cfgError);
+    if (!cfgError.empty()) {
+        mpgd::Logger::init(cfg.logging.level, cfg.logging.file);
+        mpgd::logWarn("config: %s", cfgError.c_str());
+    } else {
+        mpgd::Logger::init(cfg.logging.level, cfg.logging.file);
+    }
+
+    if (!opts.profile.empty()) cfg.planetcnc.profile = opts.profile;
+    if (opts.attach) cfg.planetcnc.attach = true;
+
+    mpgd::logInfo("mpgd starting (config=%s, profile=%s, gui=%s, attach=%s, sniff=%s)",
+                  opts.configPath.c_str(),
+                  cfg.planetcnc.profile.empty() ? "<default>" : cfg.planetcnc.profile.c_str(),
+                  opts.noGui ? "headless" : "yes",
+                  opts.attach ? "yes" : "no",
+                  opts.sniff ? "yes" : "no");
+
+    if (hid_init() != 0) {
+        mpgd::logError("hid_init failed");
+        return 1;
+    }
+
+    mpgd::SharedState state;
+
+    // --- TNG API (unless sniffing) ----------------------------------------
+    mpgd::TngApi api;
+    bool tngReady = false;
+    if (!opts.sniff) {
+        std::string err;
+        if (!api.load(cfg.planetcnc.libPath, err)) {
+            mpgd::logError("TNG API unavailable: %s", err.c_str());
+            hid_exit();
+            return 1;
+        }
+
+        if (opts.attach) {
+            if (!api.isRunningExt()) {
+                mpgd::logWarn("attach mode: no external TNG process detected; "
+                              "button/display commands may have no effect");
+            }
+            state.jogEnabled = false;
+            mpgd::logWarn("attach mode: jogging disabled (Jog is not available "
+                          "through the external pipe interface)");
+        } else {
+            bool ok;
+            if (cfg.planetcnc.profile.empty()) {
+                ok = api.run(opts.noGui);
+            } else {
+                ok = api.runProfile(opts.noGui, cfg.planetcnc.profile);
+            }
+            if (!ok) {
+                mpgd::logError("failed to start TNG (Run)");
+                hid_exit();
+                return 1;
+            }
+        }
+
+        // Wait for TNG initialization (init callback or IsInitialized).
+        // Only meaningful for in-process mode; in attach mode TNG runs
+        // externally and IsInitialized() stays false.
+        bool tngReady = true;
+        if (!opts.attach) {
+            int waited = 0;
+            while (!state.shutdown.load() && !api.isInitialized() && waited < 30000) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                waited += 100;
+            }
+            tngReady = api.isInitialized();
+            if (!tngReady) {
+                mpgd::logWarn("TNG did not report initialized within 30s; continuing anyway");
+            } else {
+                mpgd::logInfo("TNG initialized");
+            }
+        }
+    }
+
+    // --- Components --------------------------------------------------------
+    mpgd::ButtonHandler buttonHandler(api, state, cfg);
+    mpgd::JogController jogController(api, state, cfg.jogging);
+    mpgd::DisplayUpdater displayUpdater(api, state, cfg);
+    mpgd::StateReader stateReader(api, state);
+
+    mpgd::usb::HidDevice device;
+    mpgd::XhcPendant pendant(state, buttonHandler, cfg.polling);
+
+    int usbPeriodMs = 1000 / (cfg.polling.usbHz > 0 ? cfg.polling.usbHz : 100);
+    int displayPeriodMs = 1000 / (cfg.polling.displayHz > 0 ? cfg.polling.displayHz : 20);
+
+    mpgd::UsbPollThread usbThread(state, device, pendant, cfg.device,
+                                  cfg.polling, opts.sniff);
+    mpgd::JogThread jogThread(state, jogController, usbPeriodMs);
+    mpgd::DisplayThread displayThread(state, device, displayUpdater,
+                                      stateReader, displayPeriodMs);
+
+    mpgd::Daemon::installSignalHandlers(state.shutdown);
+
+    // --- Start threads -----------------------------------------------------
+    std::vector<std::thread> threads;
+    threads.emplace_back([&] { usbThread.run(); });
+    if (!opts.sniff) {
+        threads.emplace_back([&] { jogThread.run(); });
+        threads.emplace_back([&] { displayThread.run(); });
+    }
+
+    mpgd::logInfo("mpgd running; press Ctrl+C to stop");
+    mpgd::Daemon::waitForShutdown(state.shutdown);
+
+    // --- Graceful shutdown --------------------------------------------------
+    mpgd::logInfo("shutting down...");
+    state.shutdown.store(true);
+    jogController.stopNow();
+
+    for (auto& t : threads) {
+        if (t.joinable()) t.join();
+    }
+
+    if (!opts.sniff && !opts.attach) {
+        api.exitTng();
+    }
+
+    mpgd::Logger::shutdown();
+    hid_exit();
+    return 0;
+}
