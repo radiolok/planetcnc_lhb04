@@ -62,6 +62,7 @@ struct Snapshot {
     bool checksumOk = true;
     bool sleeping = false;
     int64_t jogAccum = 0;
+    int64_t axisAccum[6] = {0}; // X, Y, Z, A, Spindle, Feed
     uint64_t packetCount = 0;
     uint64_t checksumFails = 0;
 };
@@ -114,6 +115,54 @@ const char* axisName(uint8_t code) {
     }
 }
 
+// Maps the axis rotary position to the LCD variable the wheel drives:
+// X, Y, Z, A, Spindle, Feed (indexes 0..5). Returns -1 for OFF/unknown.
+int axisVariableIndex(uint8_t code) {
+    switch (code) {
+        case mpgd::xhc::kAxisX:       return 0;
+        case mpgd::xhc::kAxisY:       return 1;
+        case mpgd::xhc::kAxisZ:       return 2;
+        case mpgd::xhc::kAxisA:       return 3;
+        case mpgd::xhc::kAxisSpindle: return 4;
+        case mpgd::xhc::kAxisFeed:    return 5;
+        default:                      return -1;
+    }
+}
+
+const char* axisVariableName(int idx) {
+    static const char* names[] = {"X", "Y", "Z", "A", "S", "F"};
+    return (idx >= 0 && idx < 6) ? names[idx] : "?";
+}
+
+// Renders the six LCD variables into the 6 x 8-byte output reports that the
+// pendant displays (report ID 0x06, same wire layout as the daemon).
+void buildDisplayFrame(const int64_t (&acc)[6],
+                       uint8_t (&reports)[mpgd::xhc::kDisplayReportsCount]
+                                          [mpgd::xhc::kDisplayReportSize]) {
+    mpgd::usb::DisplayData d;
+    d.line1 = static_cast<double>(acc[0]);
+    d.line2 = static_cast<double>(acc[1]);
+    d.line3 = static_cast<double>(acc[2]);
+    d.machine1 = static_cast<double>(acc[3]);
+    d.machine2 = static_cast<double>(acc[4]);
+    d.machine3 = static_cast<double>(acc[5]);
+    d.feedOverride = 0.0;
+    d.spindleOverride = 0.0;
+    d.feedValue = 0.0;
+    d.spindleRps = 0.0;
+    d.stepsize = 1;
+    d.inchIcon = false;
+    d.aAxisActive = false;
+
+    uint8_t payload[mpgd::xhc::kDisplayBufSize];
+    mpgd::usb::PacketParser::buildDisplayPayload(d, payload);
+    for (size_t r = 0; r < mpgd::xhc::kDisplayReportsCount; ++r) {
+        reports[r][0] = mpgd::xhc::kOutputReportId;
+        for (size_t i = 0; i < 7; ++i)
+            reports[r][i + 1] = payload[r * 7 + i];
+    }
+}
+
 std::string hexString(const uint8_t* data, size_t len) {
     std::string out;
     char b[4];
@@ -152,6 +201,7 @@ void readerThread() {
     auto lastNoDataLog = std::chrono::steady_clock::now();
     auto lastDataTp = std::chrono::steady_clock::now();
     uint8_t lastBadReportId = 0xFF;
+    auto lastDisplayTp = std::chrono::steady_clock::now();
 
     // Capture every raw packet to a file so it can be shared/analyzed.
     g_rawFile.open(g_rawLogPath, std::ios::app);
@@ -268,7 +318,11 @@ void readerThread() {
                 s.expectedChecksum = p.expectedChecksum;
                 s.checksumOk = p.checksumOk;
                 s.sleeping = sleeping;
-                if (p.jogDelta != 0) s.jogAccum += static_cast<int>(p.jogDelta);
+                if (p.jogDelta != 0) {
+                    s.jogAccum += static_cast<int>(p.jogDelta);
+                    const int vi = axisVariableIndex(p.axisCode);
+                    if (vi >= 0) s.axisAccum[vi] += static_cast<int>(p.jogDelta);
+                }
                 s.packetCount++;
                 if (!p.checksumOk) s.checksumFails++;
             }
@@ -309,6 +363,30 @@ void readerThread() {
                 g_snap.connected = false;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(reconnectMs));
+        }
+
+        // Feedback path (PC -> pendant): refresh the LCD with the current
+        // XYZASF accumulators at ~25 Hz max so the display is no longer blank
+        // and the wheel visibly changes only the selected variable.
+        if (dev.isOpen()) {
+            const auto nowD = std::chrono::steady_clock::now();
+            const auto sinceDisplay =
+                std::chrono::duration_cast<std::chrono::milliseconds>(nowD - lastDisplayTp).count();
+            if (sinceDisplay >= 40) {
+                int64_t acc[6];
+                {
+                    std::lock_guard<std::mutex> lk(g_mtx);
+                    for (int i = 0; i < 6; ++i) acc[i] = g_snap.axisAccum[i];
+                }
+                uint8_t frame[mpgd::xhc::kDisplayReportsCount]
+                             [mpgd::xhc::kDisplayReportSize];
+                buildDisplayFrame(acc, frame);
+                for (size_t rr = 0; rr < mpgd::xhc::kDisplayReportsCount; ++rr) {
+                    if (dev.write(frame[rr], mpgd::xhc::kDisplayReportSize) < 0)
+                        break;
+                }
+                lastDisplayTp = nowD;
+            }
         }
     }
 
@@ -438,6 +516,22 @@ void DrawUI() {
                 static_cast<int>(s.jogDelta), dir);
 
     ImGui::Separator();
+    ImGui::Text("Pendant display feedback (XYZASF):");
+    const int vi = axisVariableIndex(s.axisCode);
+    for (int i = 0; i < 6; ++i) {
+        if (i == vi)
+            ImGui::TextColored(ImVec4(0.25f, 1.0f, 0.4f, 1.0f), "%s=%lld",
+                               axisVariableName(i), static_cast<long long>(s.axisAccum[i]));
+        else
+            ImGui::TextDisabled("%s=%lld", axisVariableName(i),
+                                static_cast<long long>(s.axisAccum[i]));
+        ImGui::SameLine(0.0f, 18.0f);
+    }
+    ImGui::NewLine();
+    ImGui::TextDisabled("wheel updates only the selected variable; X/Y/Z are "
+                        "LCD lines, A/S/F are machine lines");
+
+    ImGui::Separator();
     ImGui::Text("Button:");
     if (s.button1)
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s (0x%02X)", b1.c_str(),
@@ -449,6 +543,7 @@ void DrawUI() {
     if (ImGui::Button("Reset counters")) {
         std::lock_guard<std::mutex> lk(g_mtx);
         g_snap.jogAccum = 0;
+        for (int i = 0; i < 6; ++i) g_snap.axisAccum[i] = 0;
         g_snap.packetCount = 0;
         g_snap.checksumFails = 0;
         g_snap.havePacket = false;
