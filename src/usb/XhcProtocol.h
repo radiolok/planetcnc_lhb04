@@ -7,7 +7,9 @@
 // reference implementation for the 10CE:EB70 device, and its button layout
 // files (lib/hallib/xhc-hb04-layout{1,2}.cfg).
 //
-// Incoming report:   8 bytes, report ID 0x04 (HID interrupt IN endpoint)
+// Incoming report:   report ID 0x04 (HID interrupt IN endpoint). The reference
+//                    XHC device sends 8 bytes; some clones (e.g. KTURT) send a
+//                    6-byte report that omits the seed and checksum bytes.
 // Outgoing display:  6 x 8-byte reports, each report ID 0x06 (SET_REPORT)
 
 #include <cstdint>
@@ -21,7 +23,8 @@ inline constexpr uint8_t kInputReportId  = 0x04;
 inline constexpr uint8_t kOutputReportId = 0x06;
 
 // --- Packet sizes ---------------------------------------------------------
-inline constexpr size_t kInputPacketSize  = 8;
+inline constexpr size_t kInputPacketSize  = 8;   // reference (XHC) report length
+inline constexpr size_t kInputPacketSizeMin = 6; // KTURT clones send 6 bytes
 inline constexpr size_t kDisplayReportSize = 8;   // one SET_REPORT transaction
 inline constexpr size_t kDisplayReportsCount = 6; // reports per display frame
 inline constexpr size_t kDisplayPayloadSize  = kDisplayReportSize * kDisplayReportsCount; // 48

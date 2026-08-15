@@ -17,7 +17,20 @@ static void test_parse_input_fields() {
     CHECK_EQ(p.button1, 0x09);
     CHECK_EQ(p.axisCode, xhc::kAxisX);
     CHECK_EQ(static_cast<int>(p.jogDelta), 3);
+    CHECK(p.hasChecksum);
     CHECK(p.checksumOk);
+}
+
+static void test_parse_six_byte_report() {
+    // KTURT variant: 6-byte report without seed/checksum.
+    uint8_t pkt[6] = {0x04, 0x09, 0x00, 0x11, 0x03, 0x09};
+    ParsedInput p = PacketParser::parseInput(pkt, 6);
+    CHECK_EQ(p.reportId, xhc::kInputReportId);
+    CHECK_EQ(p.button1, 0x09);
+    CHECK_EQ(p.axisCode, xhc::kAxisX);
+    CHECK_EQ(static_cast<int>(p.jogDelta), 3);
+    CHECK(!p.hasChecksum);
+    CHECK(p.checksumOk); // no checksum byte -> treated as ok
 }
 
 static void test_parse_wrong_report_id() {
@@ -27,8 +40,8 @@ static void test_parse_wrong_report_id() {
 }
 
 static void test_parse_short_buffer() {
-    uint8_t pkt[4] = {0x04, 0x00, 0x00, 0x00};
-    ParsedInput p = PacketParser::parseInput(pkt, 4);
+    uint8_t pkt[5] = {0x04, 0x00, 0x00, 0x00, 0x00};
+    ParsedInput p = PacketParser::parseInput(pkt, 5);
     CHECK(p.reportId != xhc::kInputReportId);
 }
 
@@ -56,6 +69,7 @@ static void test_checksum_mismatch_detection() {
 
 int main() {
     test_parse_input_fields();
+    test_parse_six_byte_report();
     test_parse_wrong_report_id();
     test_parse_short_buffer();
     test_negative_jog_delta();

@@ -19,6 +19,10 @@ struct ParsedInput {
     uint8_t checksumByte = 0;
     uint8_t expectedChecksum = 0;
     bool checksumOk = true;
+    // True when the report carries a checksum byte (8-byte reference reports).
+    // 6-byte KTURT reports have no seed/checksum, so checksumOk stays true and
+    // this flag lets callers know the check was not performed.
+    bool hasChecksum = false;
 };
 
 // Everything required to render one LCD frame (wire format, not screen units).
@@ -42,9 +46,11 @@ struct DisplayData {
 // unit-tested against captured packets.
 class PacketParser {
 public:
-    // Parses an 8-byte report (report ID 0x04). Returns a default-initialized
-    // struct with reportId != kInputReportId if `len` is too short or the
-    // report ID does not match.
+    // Parses an input report (report ID 0x04). Accepts reports of at least
+    // kInputPacketSizeMin (6) bytes; the seed/checksum fields are only filled
+    // in for full 8-byte reports. Returns a default-initialized struct with
+    // reportId != kInputReportId if `len` is too short or the report ID does
+    // not match.
     static ParsedInput parseInput(const uint8_t* data, size_t len);
 
     // XOR checksum over bytes [1..6] (reference implementations use XOR).

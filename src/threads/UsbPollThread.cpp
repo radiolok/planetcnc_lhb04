@@ -67,9 +67,9 @@ void UsbPollThread::run() {
         uint8_t buf[xhc::kInputPacketSize] = {0};
         int r = device_.read(buf, sizeof(buf), periodMs);
 
-        if (r == static_cast<int>(xhc::kInputPacketSize)) {
-            if (sniff_) hexdump(buf, sizeof(buf));
-            pendant_.process(buf, sizeof(buf));
+        if (r >= static_cast<int>(xhc::kInputPacketSizeMin)) {
+            if (sniff_) hexdump(buf, static_cast<size_t>(r));
+            pendant_.process(buf, static_cast<size_t>(r));
         } else if (r < 0) {
             logWarn("pendant read error (%d), reconnecting", r);
             device_.close();

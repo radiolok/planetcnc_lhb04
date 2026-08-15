@@ -31,6 +31,7 @@
 #include <cstring>
 #include <ctime>
 #include <deque>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -48,6 +49,7 @@ struct Snapshot {
     std::string manufacturer;
     std::string product;
     uint8_t raw[8] = {0};
+    uint8_t rawLen = 0;
     uint8_t reportId = 0;
     uint8_t button1 = 0;
     uint8_t button2 = 0;
@@ -74,6 +76,11 @@ Snapshot g_snap;
 std::deque<LogEntry> g_log;
 std::atomic<bool> g_shutdown{false};
 ImFont* g_mono = nullptr;
+
+// Every raw packet is appended here (full fidelity, unthrottled) so the
+// capture can be shared/analyzed even though the in-memory log is throttled.
+const std::string g_rawLogPath = "mpg_gui_raw.log";
+std::ofstream g_rawFile;
 
 std::string nowStamp() {
     using namespace std::chrono;
@@ -107,6 +114,32 @@ const char* axisName(uint8_t code) {
     }
 }
 
+std::string hexString(const uint8_t* data, size_t len) {
+    std::string out;
+    char b[4];
+    for (size_t i = 0; i < len; ++i) {
+        std::snprintf(b, sizeof(b), "%02X ", data[i]);
+        out += b;
+    }
+    return out;
+}
+
+// Best-effort parse of a report shorter than the 8 bytes the reference driver
+// expects. Assumes the same field order (report id, button1, button2, axis,
+// jog delta, feed, seed, checksum) and just stops at the available bytes.
+mpgd::usb::ParsedInput parsePartial(const uint8_t* buf, size_t len) {
+    mpgd::usb::ParsedInput p;
+    if (len < 1) return p;
+    p.reportId = buf[0];
+    if (len >= 2) p.button1 = buf[1];
+    if (len >= 3) p.button2 = buf[2];
+    if (len >= 4) p.axisCode = buf[3];
+    if (len >= 5) p.jogDelta = static_cast<int8_t>(buf[4]);
+    if (len >= 6) p.feedRotary = buf[5];
+    if (len >= 7) p.seed = buf[6];
+    return p;
+}
+
 void readerThread() {
     mpgd::usb::HidDevice dev;
     const int reconnectMs = 2000;
@@ -114,6 +147,14 @@ void readerThread() {
     bool wasConnected = false;
     auto lastBtnEdge = std::chrono::steady_clock::now();
     auto lastWheelLog = std::chrono::steady_clock::now();
+    std::string lastRawHex;
+    auto lastRawLog = std::chrono::steady_clock::now();
+    auto lastNoDataLog = std::chrono::steady_clock::now();
+    auto lastDataTp = std::chrono::steady_clock::now();
+    uint8_t lastBadReportId = 0xFF;
+
+    // Capture every raw packet to a file so it can be shared/analyzed.
+    g_rawFile.open(g_rawLogPath, std::ios::app);
 
     while (!g_shutdown.load()) {
         if (!dev.isOpen()) {
@@ -142,13 +183,49 @@ void readerThread() {
             }
         }
 
-        uint8_t buf[mpgd::xhc::kInputPacketSize] = {0};
+        // Read into a larger buffer so the true report length is visible even
+        // if it differs from the 8 bytes the reference driver expects.
+        uint8_t buf[64] = {0};
         int r = dev.read(buf, sizeof(buf), 50);
 
-        if (r == static_cast<int>(mpgd::xhc::kInputPacketSize)) {
-            mpgd::usb::ParsedInput p = mpgd::usb::PacketParser::parseInput(buf, sizeof(buf));
-            if (p.reportId != mpgd::xhc::kInputReportId)
-                continue;
+        if (r > 0) {
+            lastDataTp = std::chrono::steady_clock::now();
+            const std::string hex = hexString(buf, static_cast<size_t>(r));
+
+            if (g_rawFile.is_open()) {
+                g_rawFile << nowStamp() << " len=" << r << "  " << hex << "\n";
+                g_rawFile.flush();
+            }
+
+            // Throttled in-memory copy: log when the bytes change or at most
+            // ~2x/second for a steady stream.
+            auto now = std::chrono::steady_clock::now();
+            auto sinceLog =
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - lastRawLog).count();
+            if (hex != lastRawHex || sinceLog >= 500) {
+                char msg[96];
+                std::snprintf(msg, sizeof(msg), "raw[%d]: %s", r, hex.c_str());
+                logAdd(msg);
+                lastRawLog = now;
+                lastRawHex = hex;
+            }
+
+            // Parse what we got. r > 0 is data, never a fatal error: a report
+            // shorter/longer than 8 bytes is handled best-effort instead of
+            // dropping the connection.
+            mpgd::usb::ParsedInput p =
+                (r >= 8) ? mpgd::usb::PacketParser::parseInput(buf, 8)
+                         : parsePartial(buf, static_cast<size_t>(r));
+
+            if (p.reportId != mpgd::xhc::kInputReportId) {
+                if (p.reportId != lastBadReportId) {
+                    char msg[64];
+                    std::snprintf(msg, sizeof(msg), "unexpected report id 0x%02X (len=%d)",
+                                  p.reportId, r);
+                    logAdd(msg);
+                    lastBadReportId = p.reportId;
+                }
+            }
 
             const bool sleeping = (p.button1 == 0 && p.button2 == 0 &&
                                    p.axisCode == 0 && p.jogDelta == 0);
@@ -156,15 +233,16 @@ void readerThread() {
             std::string eventText;
             bool hasEvent = false;
             if (p.button1 != lastButton) {
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastBtnEdge).count();
+                auto now2 = std::chrono::steady_clock::now();
+                auto elapsed =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now2 - lastBtnEdge).count();
                 if (elapsed >= 15) {
                     if (p.button1 != 0)
                         eventText = "Button press: " + mpgd::xhc::buttonNameOrHex(p.button1);
                     else
                         eventText = "Button release: " + mpgd::xhc::buttonNameOrHex(lastButton);
                     hasEvent = true;
-                    lastBtnEdge = now;
+                    lastBtnEdge = now2;
                 }
                 lastButton = p.button1;
             }
@@ -173,7 +251,12 @@ void readerThread() {
                 std::lock_guard<std::mutex> lk(g_mtx);
                 Snapshot& s = g_snap;
                 s.havePacket = true;
-                std::memcpy(s.raw, buf, sizeof(buf));
+                std::memset(s.raw, 0, sizeof(s.raw));
+                const size_t n = static_cast<size_t>(r) < sizeof(s.raw)
+                                     ? static_cast<size_t>(r)
+                                     : sizeof(s.raw);
+                std::memcpy(s.raw, buf, n);
+                s.rawLen = static_cast<uint8_t>(n);
                 s.reportId = p.reportId;
                 s.button1 = p.button1;
                 s.button2 = p.button2;
@@ -193,18 +276,33 @@ void readerThread() {
             if (hasEvent) {
                 logAdd(eventText);
             } else if (p.jogDelta != 0) {
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWheelLog).count();
+                auto now2 = std::chrono::steady_clock::now();
+                auto elapsed =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now2 - lastWheelLog).count();
                 if (elapsed >= 100) {
                     char b[32];
                     std::snprintf(b, sizeof(b), "Wheel: %+d", static_cast<int>(p.jogDelta));
                     logAdd(b);
-                    lastWheelLog = now;
+                    lastWheelLog = now2;
                 }
             }
-        } else if (r < 0) {
+        } else if (r == 0) {
+            // Connected but no report arrived — surface it about once a second
+            // so a silently-idle device is visible in the log.
+            auto now = std::chrono::steady_clock::now();
+            auto sinceData =
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - lastDataTp).count();
+            auto sinceLog =
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - lastNoDataLog).count();
+            if (sinceData >= 1000 && sinceLog >= 1000) {
+                logAdd("no input reports (read timeout)");
+                lastNoDataLog = now;
+            }
+        } else { // r < 0: real hidapi error
+            char msg[64];
+            std::snprintf(msg, sizeof(msg), "Read error (%d), reconnecting...", r);
             dev.close();
-            logAdd("Read error, reconnecting...");
+            logAdd(msg);
             wasConnected = false;
             {
                 std::lock_guard<std::mutex> lk(g_mtx);
@@ -212,9 +310,10 @@ void readerThread() {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(reconnectMs));
         }
-        // r == 0: read timeout, no data — loop again.
     }
 
+    if (g_rawFile.is_open())
+        g_rawFile.close();
     dev.close();
 }
 
@@ -245,11 +344,11 @@ void DrawUI() {
     ImGui::TextDisabled("VID 0x%04X  PIDs 0xEB70/0xEB71/0xEB93", kVendorId);
 
     ImGui::Separator();
-    ImGui::Text("Raw report:");
+    ImGui::Text("Raw report (%d bytes):", s.rawLen);
     char raw[64];
     int o = 0;
     if (s.havePacket) {
-        for (int i = 0; i < 8; ++i)
+        for (int i = 0; i < s.rawLen && i < 8; ++i)
             o += std::snprintf(raw + o, sizeof(raw) - o, "%02X ", s.raw[i]);
     } else {
         o += std::snprintf(raw + o, sizeof(raw) - o, "-- -- -- -- -- -- -- --");
@@ -257,6 +356,9 @@ void DrawUI() {
     if (g_mono) ImGui::PushFont(g_mono);
     ImGui::TextUnformatted(raw);
     if (g_mono) ImGui::PopFont();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Copy raw"))
+        ImGui::SetClipboardText(raw);
 
     ImGui::Separator();
     if (ImGui::BeginTable("fields", 2, ImGuiTableFlags_SizingStretchProp)) {
@@ -363,7 +465,15 @@ void DrawUI() {
         g_log.clear();
     }
     ImGui::SameLine();
+    if (ImGui::Button("Copy log")) {
+        std::string all;
+        for (const auto& e : logs)
+            all += e.stamp + "  " + e.text + "\n";
+        ImGui::SetClipboardText(all.c_str());
+    }
+    ImGui::SameLine();
     ImGui::Text("%zu events", logs.size());
+    ImGui::TextDisabled("full capture: %s", g_rawLogPath.c_str());
     ImGui::Separator();
 
     ImGui::BeginChild("scroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);

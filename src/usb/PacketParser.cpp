@@ -36,7 +36,7 @@ uint8_t stepsizeDisplayCode(int stepsize) {
 
 ParsedInput PacketParser::parseInput(const uint8_t* data, size_t len) {
     ParsedInput p;
-    if (len < xhc::kInputPacketSize) {
+    if (len < xhc::kInputPacketSizeMin) {
         p.reportId = 0xFF;
         return p;
     }
@@ -44,16 +44,23 @@ ParsedInput PacketParser::parseInput(const uint8_t* data, size_t len) {
         p.reportId = data[xhc::kOffsetReportId];
         return p;
     }
-    p.reportId        = data[xhc::kOffsetReportId];
-    p.button1         = data[xhc::kOffsetButton1];
-    p.button2         = data[xhc::kOffsetButton2];
-    p.axisCode        = data[xhc::kOffsetAxis];
-    p.jogDelta        = static_cast<int8_t>(data[xhc::kOffsetJogDelta]);
-    p.feedRotary      = data[xhc::kOffsetFeed];
-    p.seed            = data[xhc::kOffsetSeed];
-    p.checksumByte    = data[xhc::kOffsetChecksum];
-    p.expectedChecksum = computeChecksum(data, len);
-    p.checksumOk      = (p.checksumByte == p.expectedChecksum);
+    p.reportId   = data[xhc::kOffsetReportId];
+    p.button1    = data[xhc::kOffsetButton1];
+    p.button2    = data[xhc::kOffsetButton2];
+    p.axisCode   = data[xhc::kOffsetAxis];
+    p.jogDelta   = static_cast<int8_t>(data[xhc::kOffsetJogDelta]);
+    p.feedRotary = data[xhc::kOffsetFeed];
+
+    // Seed and checksum only exist in the full 8-byte reference report.
+    // 6-byte KTURT reports omit them, so leave checksumOk as the default
+    // (true) and mark that no checksum verification was performed.
+    if (len >= xhc::kInputPacketSize) {
+        p.seed             = data[xhc::kOffsetSeed];
+        p.checksumByte     = data[xhc::kOffsetChecksum];
+        p.expectedChecksum = computeChecksum(data, len);
+        p.checksumOk       = (p.checksumByte == p.expectedChecksum);
+        p.hasChecksum      = true;
+    }
     return p;
 }
 
