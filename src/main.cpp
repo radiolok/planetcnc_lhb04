@@ -206,16 +206,17 @@ int main(int argc, char** argv) {
     mpgd::DisplayUpdater displayUpdater(api, state, cfg);
     mpgd::StateReader stateReader(api, state);
 
-    mpgd::usb::HidDevice device;
+    mpgd::usb::HidDevice readDevice;
+    mpgd::usb::HidDevice writeDevice;
     mpgd::XhcPendant pendant(state, buttonHandler, cfg.polling);
 
     int usbPeriodMs = 1000 / (cfg.polling.usbHz > 0 ? cfg.polling.usbHz : 100);
     int displayPeriodMs = 1000 / (cfg.polling.displayHz > 0 ? cfg.polling.displayHz : 20);
 
-    mpgd::UsbPollThread usbThread(state, device, pendant, cfg.device,
-                                  cfg.polling, opts.sniff);
+    mpgd::UsbPollThread usbThread(state, readDevice, writeDevice, pendant,
+                                  cfg.device, cfg.polling, opts.sniff);
     mpgd::JogThread jogThread(state, jogController, usbPeriodMs);
-    mpgd::DisplayThread displayThread(state, device, displayUpdater,
+    mpgd::DisplayThread displayThread(state, writeDevice, displayUpdater,
                                       stateReader, displayPeriodMs);
 
     mpgd::Daemon::installSignalHandlers(state.shutdown);

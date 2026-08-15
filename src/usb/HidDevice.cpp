@@ -106,6 +106,54 @@ std::vector<HidDeviceInfo> enumerateDevices(uint16_t vendorId,
     return out;
 }
 
+bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds,
+                   HidDevice& readDev, HidDevice& writeDev, std::string& error) {
+    const std::vector<HidDeviceInfo> devs = enumerateDevices(vendorId, productIds);
+    if (devs.empty()) {
+        error = "no XHC LHB04 device found";
+        return false;
+    }
+
+    if (devs.size() == 1) {
+        if (!readDev.openPath(devs[0].path) || !writeDev.openPath(devs[0].path)) {
+            error = "open failed";
+            return false;
+        }
+        return true;
+    }
+
+    HidDeviceInfo readInfo;
+    HidDeviceInfo writeInfo;
+    bool haveRead = false;
+    bool haveWrite = false;
+    for (const auto& info : devs) {
+        HidDevice probe;
+        if (!probe.openPath(info.path)) continue;
+        uint8_t rep[8] = {0x06, 0, 0, 0, 0, 0, 0, 0};
+        const int wr = probe.sendFeatureReport(rep, sizeof(rep));
+        if (wr >= 0) {
+            if (!haveWrite) { writeInfo = info; haveWrite = true; }
+        } else {
+            if (!haveRead) { readInfo = info; haveRead = true; }
+        }
+    }
+
+    if (haveWrite && haveRead) {
+        if (!readDev.openPath(readInfo.path) || !writeDev.openPath(writeInfo.path)) {
+            error = "open read/write collections failed";
+            return false;
+        }
+        return true;
+    }
+
+    // Could not separate roles; use the first node for both.
+    if (!readDev.openPath(devs[0].path) || !writeDev.openPath(devs[0].path)) {
+        error = "open failed";
+        return false;
+    }
+    return true;
+}
+
 void HidDevice::close() {
     if (device_) {
         hid_close(device_);

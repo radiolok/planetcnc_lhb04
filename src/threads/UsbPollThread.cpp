@@ -24,12 +24,12 @@ void hexdump(const uint8_t* data, size_t len) {
 
 } // namespace
 
-UsbPollThread::UsbPollThread(SharedState& state, usb::HidDevice& device,
-                             XhcPendant& pendant,
+UsbPollThread::UsbPollThread(SharedState& state, usb::HidDevice& readDevice,
+                             usb::HidDevice& writeDevice, XhcPendant& pendant,
                              const DeviceConfig& deviceCfg,
                              const PollingConfig& polling, bool sniff)
-    : state_(state), device_(device), pendant_(pendant),
-      deviceCfg_(deviceCfg), polling_(polling), sniff_(sniff) {}
+    : state_(state), readDevice_(readDevice), writeDevice_(writeDevice),
+      pendant_(pendant), deviceCfg_(deviceCfg), polling_(polling), sniff_(sniff) {}
 
 int UsbPollThread::pollPeriodMs() const {
     int hz = polling_.usbHz > 0 ? polling_.usbHz : 100;
@@ -44,11 +44,12 @@ void UsbPollThread::run() {
             periodMs, reconnectMs);
 
     while (!state_.shutdown.load()) {
-        if (!device_.isOpen()) {
+        if (!readDevice_.isOpen() || !writeDevice_.isOpen()) {
             std::string err;
-            if (device_.open(deviceCfg_.vendorId, deviceCfg_.productIds, err)) {
+            if (usb::openReadWrite(deviceCfg_.vendorId, deviceCfg_.productIds,
+                                   readDevice_, writeDevice_, err)) {
                 logInfo("pendant connected: %s %s",
-                        device_.manufacturer().c_str(), device_.product().c_str());
+                        readDevice_.manufacturer().c_str(), readDevice_.product().c_str());
                 {
                     std::lock_guard<std::mutex> lk(state_.mutex);
                     state_.pendant.connected = true;
@@ -65,14 +66,15 @@ void UsbPollThread::run() {
         }
 
         uint8_t buf[xhc::kInputPacketSize] = {0};
-        int r = device_.read(buf, sizeof(buf), periodMs);
+        int r = readDevice_.read(buf, sizeof(buf), periodMs);
 
         if (r >= static_cast<int>(xhc::kInputPacketSizeMin)) {
             if (sniff_) hexdump(buf, static_cast<size_t>(r));
             pendant_.process(buf, static_cast<size_t>(r));
         } else if (r < 0) {
             logWarn("pendant read error (%d), reconnecting", r);
-            device_.close();
+            readDevice_.close();
+            writeDevice_.close();
             {
                 std::lock_guard<std::mutex> lk(state_.mutex);
                 state_.pendant.connected = false;
@@ -83,7 +85,8 @@ void UsbPollThread::run() {
         // r == 0: read timeout, no data — loop again.
     }
 
-    device_.close();
+    readDevice_.close();
+    writeDevice_.close();
     logInfo("usb poll thread stopped");
 }
 

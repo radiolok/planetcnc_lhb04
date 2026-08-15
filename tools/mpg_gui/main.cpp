@@ -195,59 +195,6 @@ mpgd::usb::ParsedInput parsePartial(const uint8_t* buf, size_t len) {
     return p;
 }
 
-// Opens the pendant for both input reads and display writes. On Windows the
-// pendant enumerates as several HID top-level collections: one exposes the
-// input report (0x04) and another the feature report (0x06) used for the LCD.
-// We probe each node with a feature-report write to find the write-capable one.
-bool openPendant(mpgd::usb::HidDevice& readDev, mpgd::usb::HidDevice& writeDev,
-                 std::string& err) {
-    const auto devs = mpgd::usb::enumerateDevices(kVendorId, kProductIds);
-    if (devs.empty()) {
-        err = "no XHC LHB04 device found";
-        return false;
-    }
-
-    if (devs.size() == 1) {
-        if (!readDev.openPath(devs[0].path) || !writeDev.openPath(devs[0].path)) {
-            err = "open failed";
-            return false;
-        }
-        return true;
-    }
-
-    mpgd::usb::HidDeviceInfo readInfo;
-    mpgd::usb::HidDeviceInfo writeInfo;
-    bool haveRead = false;
-    bool haveWrite = false;
-    for (const auto& info : devs) {
-        mpgd::usb::HidDevice probe;
-        if (!probe.openPath(info.path)) continue;
-        uint8_t rep[mpgd::xhc::kDisplayReportSize] = {
-            mpgd::xhc::kOutputReportId, 0, 0, 0, 0, 0, 0, 0};
-        const int wr = probe.sendFeatureReport(rep, sizeof(rep));
-        if (wr >= 0) {
-            if (!haveWrite) { writeInfo = info; haveWrite = true; }
-        } else {
-            if (!haveRead) { readInfo = info; haveRead = true; }
-        }
-    }
-
-    if (haveWrite && haveRead) {
-        if (!readDev.openPath(readInfo.path) || !writeDev.openPath(writeInfo.path)) {
-            err = "open read/write collections failed";
-            return false;
-        }
-        return true;
-    }
-
-    // Could not separate roles; use the first node for both.
-    if (!readDev.openPath(devs[0].path) || !writeDev.openPath(devs[0].path)) {
-        err = "open failed";
-        return false;
-    }
-    return true;
-}
-
 void readerThread() {
     mpgd::usb::HidDevice readDev;
     mpgd::usb::HidDevice writeDev;
@@ -271,7 +218,7 @@ void readerThread() {
     while (!g_shutdown.load()) {
         if (!readDev.isOpen() || !writeDev.isOpen()) {
             std::string err;
-            if (openPendant(readDev, writeDev, err)) {
+            if (mpgd::usb::openReadWrite(kVendorId, kProductIds, readDev, writeDev, err)) {
                 {
                     std::lock_guard<std::mutex> lk(g_mtx);
                     g_snap.connected = true;

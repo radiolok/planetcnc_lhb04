@@ -250,7 +250,7 @@ buttons:
 | Поток | Период | Назначение |
 |---|---|---|
 | Main | событийный | CLI, конфиг, запуск/attach TNG, сигналы, graceful shutdown |
-| USB Poll | 10 мс | `hid_read`, разбор пакетов, debounce кнопок, накопление дельты маховика, реконнект |
+| USB Poll | 10 мс | открытие коллекций входа/дисплея, `hid_read`, разбор пакетов, debounce кнопок, накопление дельты маховика, реконнект |
 | Jog Process | 10 мс | вызов `Jog()`/`Jog9()`/`JogStop()`, override подачи/шпинделя |
 | Display Update | 50 мс | чтение `Info*`, кодирование LCD, feature report `0x06` |
 
