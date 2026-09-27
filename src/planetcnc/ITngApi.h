@@ -12,7 +12,12 @@ namespace mpgd {
 // declared here.
 class ITngApi {
 public:
+    ITngApi() = default;
     virtual ~ITngApi() = default;
+    ITngApi(const ITngApi&) = delete;
+    ITngApi& operator=(const ITngApi&) = delete;
+    ITngApi(ITngApi&&) = delete;
+    ITngApi& operator=(ITngApi&&) = delete;
 
     // --- Run status --------------------------------------------------------
     virtual bool isRunning() = 0;

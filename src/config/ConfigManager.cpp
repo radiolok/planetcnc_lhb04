@@ -53,37 +53,37 @@ bool isKnownButton(const std::string& name) {
 
 void applyLogging(const YAML::Node& n, LoggingConfig& c) {
     if (!n) return;
-    if (n["level"]) c.level = n["level"].as<std::string>(c.level);
-    if (n["file"]) c.file = n["file"].as<std::string>(c.file);
+    if (n["level"]) c.level = n["level"].as<std::string>();
+    if (n["file"]) c.file = n["file"].as<std::string>();
 }
 
 void applyPolling(const YAML::Node& n, PollingConfig& c) {
     if (!n) return;
-    if (n["usb_hz"]) c.usbHz = n["usb_hz"].as<int>(c.usbHz);
-    if (n["display_hz"]) c.displayHz = n["display_hz"].as<int>(c.displayHz);
-    if (n["jog_hz"]) c.jogHz = n["jog_hz"].as<int>(c.jogHz);
-    if (n["reconnect_ms"]) c.reconnectMs = n["reconnect_ms"].as<int>(c.reconnectMs);
-    if (n["button_debounce_ms"]) c.buttonDebounceMs = n["button_debounce_ms"].as<int>(c.buttonDebounceMs);
-    if (n["display_always"]) c.displayAlways = n["display_always"].as<bool>(c.displayAlways);
+    if (n["usb_hz"]) c.usbHz = n["usb_hz"].as<int>();
+    if (n["display_hz"]) c.displayHz = n["display_hz"].as<int>();
+    if (n["jog_hz"]) c.jogHz = n["jog_hz"].as<int>();
+    if (n["reconnect_ms"]) c.reconnectMs = n["reconnect_ms"].as<int>();
+    if (n["button_debounce_ms"]) c.buttonDebounceMs = n["button_debounce_ms"].as<int>();
+    if (n["display_always"]) c.displayAlways = n["display_always"].as<bool>();
 }
 
 void applyDevice(const YAML::Node& n, DeviceConfig& c) {
     if (!n) return;
-    if (n["vendor_id"]) c.vendorId = static_cast<uint16_t>(n["vendor_id"].as<unsigned>(c.vendorId));
+    if (n["vendor_id"]) c.vendorId = static_cast<uint16_t>(n["vendor_id"].as<unsigned>());
     if (n["product_ids"]) {
         c.productIds.clear();
         for (const auto& pid : n["product_ids"]) {
             c.productIds.push_back(static_cast<uint16_t>(pid.as<unsigned>()));
         }
     }
-    if (n["verify_checksum"]) c.verifyChecksum = n["verify_checksum"].as<bool>(c.verifyChecksum);
+    if (n["verify_checksum"]) c.verifyChecksum = n["verify_checksum"].as<bool>();
 }
 
 void applyPlanetCnc(const YAML::Node& n, PlanetCncConfig& c) {
     if (!n) return;
-    if (n["profile"]) c.profile = n["profile"].as<std::string>(c.profile);
-    if (n["lib_path"]) c.libPath = n["lib_path"].as<std::string>(c.libPath);
-    if (n["attach"]) c.attach = n["attach"].as<bool>(c.attach);
+    if (n["profile"]) c.profile = n["profile"].as<std::string>();
+    if (n["lib_path"]) c.libPath = n["lib_path"].as<std::string>();
+    if (n["attach"]) c.attach = n["attach"].as<bool>();
 }
 
 void applyJogging(const YAML::Node& n, JoggingConfig& c) {
@@ -92,13 +92,13 @@ void applyJogging(const YAML::Node& n, JoggingConfig& c) {
         c.stepSizes.clear();
         for (const auto& s : n["step_sizes"]) c.stepSizes.push_back(s.as<double>());
     }
-    if (n["default_step_index"]) c.defaultStepIndex = n["default_step_index"].as<int>(c.defaultStepIndex);
-    if (n["max_speed"]) c.maxSpeed = n["max_speed"].as<double>(c.maxSpeed);
-    if (n["override_step"]) c.overrideStep = n["override_step"].as<double>(c.overrideStep);
-    if (n["feed_override_param"]) c.feedOverrideParam = n["feed_override_param"].as<std::string>(c.feedOverrideParam);
-    if (n["spindle_override_param"]) c.spindleOverrideParam = n["spindle_override_param"].as<std::string>(c.spindleOverrideParam);
-    if (n["jog_speed"]) c.jogSpeed = n["jog_speed"].as<double>(c.jogSpeed);
-    if (n["max_decel"]) c.maxDecel = n["max_decel"].as<double>(c.maxDecel);
+    if (n["default_step_index"]) c.defaultStepIndex = n["default_step_index"].as<int>();
+    if (n["max_speed"]) c.maxSpeed = n["max_speed"].as<double>();
+    if (n["override_step"]) c.overrideStep = n["override_step"].as<double>();
+    if (n["feed_override_param"]) c.feedOverrideParam = n["feed_override_param"].as<std::string>();
+    if (n["spindle_override_param"]) c.spindleOverrideParam = n["spindle_override_param"].as<std::string>();
+    if (n["jog_speed"]) c.jogSpeed = n["jog_speed"].as<double>();
+    if (n["max_decel"]) c.maxDecel = n["max_decel"].as<double>();
 }
 
 void applyButtons(const YAML::Node& n, Config& c) {
@@ -144,6 +144,7 @@ std::vector<std::pair<std::string, ButtonAction>> Config::defaultButtons() {
         return makeButtonAction(action, cmd);
     };
     // Keep in sync with config/mpgd.yaml.
+    // clang-format off
     return {
         {"reset",       bind("estop")},
         {"stop",        bind("stop")},
@@ -154,6 +155,7 @@ std::vector<std::pair<std::string, ButtonAction>> Config::defaultButtons() {
         {"spindle",     bind("spindle_toggle")},
         {"step",        bind("step_size")},
     };
+    // clang-format on
 }
 
 bool ConfigManager::isKnownAction(const std::string& action) {

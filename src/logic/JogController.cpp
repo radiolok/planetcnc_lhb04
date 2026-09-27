@@ -201,7 +201,7 @@ void JogController::runServo(int axis, bool freshCounts) {
     const double jogSpeed = std::max(0.1, cfg_.jogSpeed);
     v[axis] = vel / jogSpeed;
 
-    bool ok;
+    bool ok = false;
     if (axis < 3) {
         ok = api_.jog(false, v[0], v[1], v[2]);
     } else {

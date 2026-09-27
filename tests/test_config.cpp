@@ -142,6 +142,70 @@ void test_action_names_resolve_to_types() {
     CHECK_NEAR(a.delta, -10.0, 1e-12);
 }
 
+void test_partial_sections_keep_other_defaults() {
+    auto path = writeTemp("mpgd_test_partial.yaml",
+        "jogging:\n"
+        "  max_speed: 1500\n"
+        "polling:\n"
+        "  display_hz: 10\n");
+    Config cfg;
+    std::string err;
+    CHECK(ConfigManager::load(path, cfg, err));
+    const Config defaults;
+    CHECK_NEAR(cfg.jogging.maxSpeed, 1500.0, 1e-9);
+    CHECK_NEAR(cfg.jogging.jogSpeed, defaults.jogging.jogSpeed, 1e-9);
+    CHECK_EQ(cfg.jogging.stepSizes.size(), defaults.jogging.stepSizes.size());
+    CHECK_EQ(cfg.polling.displayHz, 10);
+    CHECK_EQ(cfg.polling.usbHz, defaults.polling.usbHz);
+    CHECK_EQ(cfg.device.vendorId, defaults.device.vendorId);
+    CHECK_EQ(cfg.logging.level, defaults.logging.level);
+    std::filesystem::remove(path);
+}
+
+void test_empty_file_is_rejected() {
+    auto path = writeTemp("mpgd_test_empty.yaml", "");
+    Config cfg;
+    std::string err;
+    bool missing = false;
+    const bool ok = ConfigManager::loadOrDefault(path, cfg, err, missing);
+    // An empty document is not a mapping: reject it rather than guess.
+    CHECK(!ok);
+    CHECK(!err.empty());
+    std::filesystem::remove(path);
+}
+
+// A value of the wrong type must fail the load, not silently keep the
+// default (a typo in max_speed would otherwise go unnoticed).
+void test_wrong_value_type_is_fatal() {
+    const char* cases[] = {
+        "polling:\n  usb_hz: fast\n",
+        "jogging:\n  max_speed: [1, 2]\n",
+        "device:\n  verify_checksum: maybe\n",
+        "jogging:\n  step_sizes: [0.1, abc]\n",
+    };
+    for (const char* text : cases) {
+        auto path = writeTemp("mpgd_test_type.yaml", text);
+        Config cfg;
+        std::string err;
+        bool missing = false;
+        const bool ok = ConfigManager::loadOrDefault(path, cfg, err, missing);
+        CHECK(!ok);
+        CHECK(!err.empty());
+        if (ok) std::printf("  accepted: %s\n", text);
+        std::filesystem::remove(path);
+    }
+}
+
+void test_section_of_wrong_shape_is_fatal() {
+    auto path = writeTemp("mpgd_test_shape.yaml", "polling: 100\n");
+    Config cfg;
+    std::string err;
+    bool missing = false;
+    CHECK(!ConfigManager::loadOrDefault(path, cfg, err, missing));
+    CHECK(!err.empty());
+    std::filesystem::remove(path);
+}
+
 } // namespace
 
 int main() {
@@ -155,5 +219,9 @@ int main() {
     test_no_buttons_section_keeps_defaults();
     test_default_step_index_out_of_range();
     test_action_names_resolve_to_types();
+    test_partial_sections_keep_other_defaults();
+    test_empty_file_is_rejected();
+    test_wrong_value_type_is_fatal();
+    test_section_of_wrong_shape_is_fatal();
     return tfw::summary("test_config");
 }

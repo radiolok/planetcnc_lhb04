@@ -8,7 +8,7 @@ using namespace mpgd;
 using namespace mpgd::usb;
 
 static uint16_t readLE16(const uint8_t* p) {
-    return static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
 }
 
 static void test_encode_coordinate_positive() {

@@ -45,7 +45,7 @@ private:
     // Cleared whenever the servo stops, the axis selection changes, or the
     // machine is moved by anything else (program, homing, TNG GUI jog, e-stop),
     // so a stale target can never drive the axis back to an old position.
-    double target_[6];
+    double target_[6] = {};
     int lastAxis_ = -1;
     // Until this time the machine reporting "not idle" is attributed to our
     // own servo decelerating after a stop rather than to an external move.

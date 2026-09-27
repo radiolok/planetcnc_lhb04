@@ -152,8 +152,8 @@ public:
         return jogResult;
     }
     bool jogStop() override { ++jogStops; return true; }
-    bool moveAxis(double speed, int axis, double value) override {
-        moveAxes.push_back({speed, axis, value});
+    bool moveAxis(double moveSpeed, int axis, double value) override {
+        moveAxes.push_back({moveSpeed, axis, value});
         return true;
     }
 };
@@ -802,8 +802,8 @@ static uint8_t payloadByte(const DisplayUpdater::Frame& f, size_t off) {
 }
 
 static uint16_t readLE16At(const DisplayUpdater::Frame& f, size_t off) {
-    return static_cast<uint16_t>(payloadByte(f, off)) |
-           (static_cast<uint16_t>(payloadByte(f, off + 1)) << 8);
+    return static_cast<uint16_t>(payloadByte(f, off) |
+                                 (payloadByte(f, off + 1) << 8));
 }
 
 static void test_display_skip_when_axis_off() {

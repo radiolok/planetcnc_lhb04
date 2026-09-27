@@ -73,11 +73,6 @@ void printUsage(const char* argv0) {
         argv0);
 }
 
-bool parseInt(const std::string& s, int& out) {
-    try { size_t p = 0; out = std::stoi(s, &p); return p == s.size(); }
-    catch (...) { return false; }
-}
-
 int axisIndex(const std::string& s) {
     if (s == "X" || s == "x") return 0;
     if (s == "Y" || s == "y") return 1;
@@ -302,7 +297,7 @@ bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value,
 
     const auto t0 = std::chrono::steady_clock::now();
 
-    bool ok;
+    bool ok = false;
     if (axis < 3) ok = api.jog(step, v[0], v[1], v[2]);
     else ok = api.jog9(step, v[0], v[1], v[2], v[3], v[4], v[5], 0, 0, 0);
     std::printf("Jog(step=%s) -> %s\n", step ? "true" : "false",
@@ -337,8 +332,7 @@ bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value,
     }
 
     const auto t1 = std::chrono::steady_clock::now();
-    const double dt = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          t1 - t0).count() / 1000.0;
+    const double dt = std::chrono::duration<double>(t1 - t0).count();
 
     AxisPos after = readPositions(api);
     reportPosition("after", after, axis);
@@ -403,8 +397,7 @@ bool runMove(mpgd::TngApi& api, int axis, double delta, double speed) {
         if (idle) break;
     }
     const auto t1 = std::chrono::steady_clock::now();
-    const double dt = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          t1 - t0).count() / 1000.0;
+    const double dt = std::chrono::duration<double>(t1 - t0).count();
 
     AxisPos after = readPositions(api);
     const double actual = after.motor[axis];
@@ -461,7 +454,7 @@ int main(int argc, char** argv) {
         // the calling thread until Exit(). Run it on a dedicated thread and
         // drive the API from the main thread (validated on real hardware).
         tngThread = std::thread([&] {
-            bool ok;
+            bool ok = false;
             if (opts.profile.empty()) ok = api.run(!opts.gui);
             else ok = api.runProfile(!opts.gui, opts.profile);
             tngRunOk.store(ok);

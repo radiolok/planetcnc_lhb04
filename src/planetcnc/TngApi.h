@@ -20,10 +20,12 @@ namespace mpgd {
 class TngApi : public ITngApi {
 public:
     TngApi() = default;
-    ~TngApi();
+    ~TngApi() override;
 
     TngApi(const TngApi&) = delete;
     TngApi& operator=(const TngApi&) = delete;
+    TngApi(TngApi&&) = delete;
+    TngApi& operator=(TngApi&&) = delete;
 
     // Loads the library and resolves symbols. `libPath` may be empty to use
     // the platform default name. Returns true on success and sets `error` on
