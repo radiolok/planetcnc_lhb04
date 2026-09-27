@@ -26,6 +26,9 @@ constexpr double kServoStopDeadbandMm = 0.05;
 constexpr double kServoStartDeadbandMm = 0.15;
 // Minimum change in commanded velocity that warrants re-issuing Jog().
 constexpr double kServoVelReissueMmS = 1.0;
+// After the servo stops, "machine not idle" is treated as our own axis still
+// decelerating (not an external move) for this long.
+constexpr std::chrono::milliseconds kOwnMotionSettle{500};
 } // namespace
 
 JogController::JogController(ITngApi& api, SharedState& state,
@@ -46,16 +49,24 @@ int JogController::drainCounts() {
 void JogController::stopServo() {
     if (servoActive_) {
         api_.jogStop();
+        if (servoAxis_ >= 0 && servoAxis_ < 6) {
+            target_[servoAxis_] = std::numeric_limits<double>::quiet_NaN();
+        }
         servoActive_ = false;
         servoAxis_ = -1;
         lastVel_ = 0.0;
+        ownMotionUntil_ = std::chrono::steady_clock::now() + kOwnMotionSettle;
     }
+}
+
+void JogController::resetTargets() {
+    for (double& t : target_) t = std::numeric_limits<double>::quiet_NaN();
 }
 
 void JogController::stopNow() {
     state_.pendant.jogCounts.store(0);
     stopServo();
-    for (double& t : target_) t = std::numeric_limits<double>::quiet_NaN();
+    resetTargets();
 }
 
 void JogController::tick() {
@@ -63,6 +74,9 @@ void JogController::tick() {
 
     bool jogEnabled;
     bool estop;
+    bool running;
+    bool paused;
+    bool idle;
     int axis;
     bool feedSel;
     bool spindleSel;
@@ -70,6 +84,9 @@ void JogController::tick() {
         std::lock_guard<std::mutex> lk(state_.mutex);
         jogEnabled = state_.jogEnabled;
         estop = state_.machine.estop;
+        running = state_.machine.running;
+        paused = state_.machine.paused;
+        idle = state_.machine.idle;
         axis = state_.selectedAxis();
         feedSel = state_.feedOverrideSelected();
         spindleSel = state_.spindleOverrideSelected();
@@ -77,14 +94,35 @@ void JogController::tick() {
 
     if (estop || !jogEnabled) {
         stopServo();
+        resetTargets();
         return;
     }
 
-    if (axis >= 0) {
-        if (counts != 0) updateTarget(axis, counts);
-        runServo(axis);
-    } else {
+    if (axis != lastAxis_) {
+        // Selection changed: drop the servo and every pending target; the
+        // axes may be moved by other means while not selected.
         stopServo();
+        resetTargets();
+        lastAxis_ = axis;
+    }
+
+    if (axis >= 0) {
+        // Never jog while a program runs or is paused.
+        if (running || paused) {
+            stopServo();
+            resetTargets();
+            return;
+        }
+        // Machine busy with motion that is not ours (homing, MDI, TNG GUI
+        // jog): discard the target and the wheel input.
+        if (!idle && !servoActive_ &&
+            std::chrono::steady_clock::now() >= ownMotionUntil_) {
+            resetTargets();
+            return;
+        }
+        if (counts != 0) updateTarget(axis, counts);
+        runServo(axis, counts != 0);
+    } else {
         if (feedSel && counts != 0) {
             processOverride(/*spindle=*/false, counts);
         } else if (spindleSel && counts != 0) {
@@ -115,7 +153,7 @@ void JogController::updateTarget(int axis, int counts) {
     target_[axis] += static_cast<double>(counts) * stepSize;
 }
 
-void JogController::runServo(int axis) {
+void JogController::runServo(int axis, bool freshCounts) {
     if (axis < 0 || axis >= 6) return;
 
     // Switching axes: stop the previous axis's servo immediately.
@@ -123,8 +161,19 @@ void JogController::runServo(int axis) {
 
     if (!std::isfinite(target_[axis])) return;
 
+    // Only start following a target on fresh wheel input; an idle servo never
+    // starts moving on its own.
+    if (!servoActive_ && !freshCounts) return;
+
     const double current = api_.infoMotorPosition(axis);
-    if (!std::isfinite(current)) return;
+    if (!std::isfinite(current)) {
+        // Without a position the servo cannot close the loop; the controller
+        // would keep jogging at the last velocity forever.
+        logWarn("jog: cannot read motor position for axis %d; stopping", axis);
+        stopServo();
+        target_[axis] = std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
 
     const double error = target_[axis] - current;
     const double absErr = std::fabs(error);
@@ -177,7 +226,11 @@ void JogController::runServo(int axis) {
         servoAxis_ = axis;
         lastVel_ = vel;
     } else {
-        logWarn("jog: velocity jog on axis %d failed", axis);
+        // A failed update leaves the controller at the previous velocity,
+        // which may overshoot the target: stop instead of carrying on.
+        logWarn("jog: velocity jog on axis %d failed; stopping", axis);
+        stopServo();
+        target_[axis] = std::numeric_limits<double>::quiet_NaN();
     }
 }
 

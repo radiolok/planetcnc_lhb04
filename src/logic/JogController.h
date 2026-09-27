@@ -3,6 +3,8 @@
 #include "config/ConfigManager.h"
 #include "logic/SharedState.h"
 
+#include <chrono>
+
 namespace mpgd {
 
 class ITngApi;
@@ -29,8 +31,9 @@ public:
 private:
     int drainCounts();
     void updateTarget(int axis, int counts);
-    void runServo(int axis);
+    void runServo(int axis, bool freshCounts);
     void stopServo();
+    void resetTargets();
     void processOverride(bool spindle, int counts);
 
     ITngApi& api_;
@@ -39,7 +42,14 @@ private:
 
     // Per-axis target positions (motor coordinates). NaN = not yet known;
     // initialized lazily from the current motor position on first use.
+    // Cleared whenever the servo stops, the axis selection changes, or the
+    // machine is moved by anything else (program, homing, TNG GUI jog, e-stop),
+    // so a stale target can never drive the axis back to an old position.
     double target_[6];
+    int lastAxis_ = -1;
+    // Until this time the machine reporting "not idle" is attributed to our
+    // own servo decelerating after a stop rather than to an external move.
+    std::chrono::steady_clock::time_point ownMotionUntil_{};
     bool servoActive_ = false;
     int servoAxis_ = -1;
     // Last commanded velocity (mm/s). Used to avoid re-issuing Jog() every

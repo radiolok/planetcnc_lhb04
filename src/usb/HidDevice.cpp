@@ -3,6 +3,7 @@
 #include <hidapi.h>
 
 #include <cwchar>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -23,16 +24,18 @@ HidDevice::~HidDevice() {
     close();
 }
 
-HidDevice::HidDevice(HidDevice&& other) noexcept
-    : device_(other.device_),
-      manufacturer_(std::move(other.manufacturer_)),
-      product_(std::move(other.product_)) {
+HidDevice::HidDevice(HidDevice&& other) noexcept {
+    std::lock_guard<std::mutex> lk(other.mtx_);
+    device_ = other.device_;
+    manufacturer_ = std::move(other.manufacturer_);
+    product_ = std::move(other.product_);
     other.device_ = nullptr;
 }
 
 HidDevice& HidDevice::operator=(HidDevice&& other) noexcept {
     if (this != &other) {
-        close();
+        std::scoped_lock lk(mtx_, other.mtx_);
+        closeLocked();
         device_ = other.device_;
         manufacturer_ = std::move(other.manufacturer_);
         product_ = std::move(other.product_);
@@ -43,7 +46,8 @@ HidDevice& HidDevice::operator=(HidDevice&& other) noexcept {
 
 bool HidDevice::open(uint16_t vendorId, const std::vector<uint16_t>& productIds,
                      std::string& error) {
-    close();
+    std::lock_guard<std::mutex> lk(mtx_);
+    closeLocked();
 
     for (uint16_t pid : productIds) {
         hid_device_* dev = hid_open(vendorId, pid, nullptr);
@@ -65,7 +69,8 @@ bool HidDevice::open(uint16_t vendorId, const std::vector<uint16_t>& productIds,
 }
 
 bool HidDevice::openPath(const std::string& path) {
-    close();
+    std::lock_guard<std::mutex> lk(mtx_);
+    closeLocked();
     hid_device_* dev = hid_open_path(path.c_str());
     if (!dev) return false;
     device_ = dev;
@@ -155,6 +160,26 @@ bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds,
 }
 
 void HidDevice::close() {
+    std::lock_guard<std::mutex> lk(mtx_);
+    closeLocked();
+}
+
+bool HidDevice::isOpen() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return device_ != nullptr;
+}
+
+std::string HidDevice::manufacturer() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return manufacturer_;
+}
+
+std::string HidDevice::product() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return product_;
+}
+
+void HidDevice::closeLocked() {
     if (device_) {
         hid_close(device_);
         device_ = nullptr;
@@ -164,27 +189,32 @@ void HidDevice::close() {
 }
 
 int HidDevice::read(uint8_t* data, size_t length, int timeoutMs) {
+    std::lock_guard<std::mutex> lk(mtx_);
     if (!device_) return -1;
     return hid_read_timeout(device_, data, static_cast<size_t>(length), timeoutMs);
 }
 
 int HidDevice::write(const uint8_t* data, size_t length) {
+    std::lock_guard<std::mutex> lk(mtx_);
     if (!device_) return -1;
     return hid_write(device_, data, static_cast<size_t>(length));
 }
 
 int HidDevice::sendFeatureReport(const uint8_t* data, size_t length) {
+    std::lock_guard<std::mutex> lk(mtx_);
     if (!device_) return -1;
     return hid_send_feature_report(device_, data, static_cast<size_t>(length));
 }
 
 std::string HidDevice::lastError() const {
+    std::lock_guard<std::mutex> lk(mtx_);
     if (!device_) return std::string();
     const wchar_t* e = hid_error(device_);
     return e ? narrow(e) : std::string();
 }
 
 int HidDevice::getFeatureReportLength(uint8_t reportId) {
+    std::lock_guard<std::mutex> lk(mtx_);
     if (!device_) return -1;
     uint8_t buf[256] = {0};
     buf[0] = reportId;

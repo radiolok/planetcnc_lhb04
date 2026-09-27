@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,10 @@ bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds,
                    HidDevice& readDev, HidDevice& writeDev, std::string& error);
 
 // Thin RAII wrapper around hidapi. Owns one open HID device.
+//
+// Thread-safe: every member serializes on an internal mutex, so one thread may
+// close/reopen the device (USB poll thread on reconnect) while another is
+// writing to it (display thread) without touching a freed hidapi handle.
 class HidDevice {
 public:
     HidDevice() = default;
@@ -57,7 +62,7 @@ public:
     // Closes the device and marks it disconnected.
     void close();
 
-    bool isOpen() const { return device_ != nullptr; }
+    bool isOpen() const;
 
     // Reads one input report (blocking up to `timeoutMs`). Returns the number
     // of bytes read (0 on timeout, negative on error).
@@ -71,8 +76,8 @@ public:
     int sendFeatureReport(const uint8_t* data, size_t length);
 
     // Returns the manufacturer/product strings of the currently open device.
-    std::string manufacturer() const { return manufacturer_; }
-    std::string product() const { return product_; }
+    std::string manufacturer() const;
+    std::string product() const;
 
     // Last transport error from hidapi (empty when none). Useful for
     // diagnosing why a write/feature-report failed.
@@ -84,6 +89,9 @@ public:
     int getFeatureReportLength(uint8_t reportId);
 
 private:
+    void closeLocked();
+
+    mutable std::mutex mtx_;
     hid_device_* device_ = nullptr;
     std::string manufacturer_;
     std::string product_;
