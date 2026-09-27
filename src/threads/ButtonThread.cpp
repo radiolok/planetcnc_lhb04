@@ -8,8 +8,7 @@
 
 namespace mpgd {
 
-ButtonThread::ButtonThread(SharedState& state, ButtonQueue& queue,
-                           ButtonHandler& handler)
+ButtonThread::ButtonThread(SharedState& state, ButtonQueue& queue, ButtonHandler& handler)
     : state_(state), queue_(queue), handler_(handler) {}
 
 void ButtonThread::run() {

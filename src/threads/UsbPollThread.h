@@ -43,9 +43,8 @@ public:
 // (input) and write (display) HID collections.
 class UsbPollThread {
 public:
-    UsbPollThread(SharedState& state, usb::HidDevice& readDevice,
-                  usb::HidDevice& writeDevice, XhcPendant& pendant,
-                  const DeviceConfig& deviceCfg, const PollingConfig& polling,
+    UsbPollThread(SharedState& state, usb::HidDevice& readDevice, usb::HidDevice& writeDevice,
+                  XhcPendant& pendant, const DeviceConfig& deviceCfg, const PollingConfig& polling,
                   bool sniff);
     UsbPollThread(SharedState& state, IPendantLink& link, XhcPendant& pendant,
                   const PollingConfig& polling, bool sniff);

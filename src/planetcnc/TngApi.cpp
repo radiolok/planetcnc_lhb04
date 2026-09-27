@@ -9,9 +9,9 @@
 #include <limits>
 
 #if defined(_WIN32)
-#  include <windows.h>
+#include <windows.h>
 #else
-#  include <dlfcn.h>
+#include <dlfcn.h>
 #endif
 
 namespace mpgd {
@@ -38,13 +38,16 @@ void* loadLibrary(const std::string& path) {
 }
 
 void* getSymbol(void* h, const char* name) {
-    return reinterpret_cast<void*>(
-        GetProcAddress(reinterpret_cast<HMODULE>(h), name));
+    return reinterpret_cast<void*>(GetProcAddress(reinterpret_cast<HMODULE>(h), name));
 }
 
-void freeLibrary(void* h) { FreeLibrary(reinterpret_cast<HMODULE>(h)); }
+void freeLibrary(void* h) {
+    FreeLibrary(reinterpret_cast<HMODULE>(h));
+}
 
-const char* libDefaultName() { return "PlanetCNCLib64.dll"; }
+const char* libDefaultName() {
+    return "PlanetCNCLib64.dll";
+}
 #else
 void* loadLibrary(const std::string& path) {
     if (path.empty()) {
@@ -53,17 +56,25 @@ void* loadLibrary(const std::string& path) {
     return dlopen(path.c_str(), RTLD_NOW);
 }
 
-void* getSymbol(void* h, const char* name) { return dlsym(h, name); }
+void* getSymbol(void* h, const char* name) {
+    return dlsym(h, name);
+}
 
-void freeLibrary(void* h) { dlclose(h); }
+void freeLibrary(void* h) {
+    dlclose(h);
+}
 
-const char* libDefaultName() { return "libPlanetCNCLib64.so"; }
+const char* libDefaultName() {
+    return "libPlanetCNCLib64.so";
+}
 #endif
 
 // Process-wide TNG initialization state, updated from the CDECL callback.
 std::atomic<int> g_tngInitState{0};
 
-void initCallback(int value) { g_tngInitState.store(value); }
+void initCallback(int value) {
+    g_tngInitState.store(value);
+}
 void refreshCallback() {}
 void idleCallback() {}
 void lineNumCallback(int) {}
@@ -93,8 +104,8 @@ bool TngApi::load(const std::string& libPath, std::string& error) {
 
     handle_ = loadLibrary(libPath);
     if (!handle_) {
-        error = std::string("failed to load TNG library (")
-              + (libPath.empty() ? libDefaultName() : libPath) + ")";
+        error = std::string("failed to load TNG library (") +
+                (libPath.empty() ? libDefaultName() : libPath) + ")";
         return false;
     }
 
@@ -183,22 +194,48 @@ void TngApi::unload() {
         handle_ = nullptr;
     }
     // Zero the import table.
-    fnRun_ = nullptr; fnRunProfile_ = nullptr; fnExit_ = nullptr;
-    fnExitForce_ = nullptr; fnGetVer_ = nullptr;
-    fnIsRunning_ = nullptr; fnIsRunningExt_ = nullptr; fnIsInitialized_ = nullptr;
-    fnIsControllerReady_ = nullptr; fnIsIdle_ = nullptr; fnIsEStop_ = nullptr;
-    fnIsStop_ = nullptr; fnIsPause_ = nullptr;
-    fnEStop_ = nullptr; fnEStopToggle_ = nullptr; fnStop_ = nullptr;
-    fnPause_ = nullptr; fnPauseToggle_ = nullptr; fnStart_ = nullptr;
-    fnGetCmdId_ = nullptr; fnCmdExec_ = nullptr; fnCmdExecStr_ = nullptr;
-    fnCmdExecVal_ = nullptr; fnSetParam_ = nullptr; fnGetParam_ = nullptr;
-    fnStartCode_ = nullptr; fnOpenCode_ = nullptr;
-    fnInfoSpeed_ = nullptr; fnInfoSpindle_ = nullptr; fnInfoJogPot_ = nullptr;
-    fnInfoWorkPosition3_ = nullptr; fnInfoMotorPosition3_ = nullptr;
-    fnInfoMotorPosition_ = nullptr; fnInfoWorkPosition_ = nullptr;
-    fnJog_ = nullptr; fnJog9_ = nullptr; fnJogStop_ = nullptr; fnMoveAxis_ = nullptr;
-    fnSetInitialiseCB_ = nullptr; fnSetRefreshCB_ = nullptr;
-    fnSetIdleCB_ = nullptr; fnSetLineNumCB_ = nullptr;
+    fnRun_ = nullptr;
+    fnRunProfile_ = nullptr;
+    fnExit_ = nullptr;
+    fnExitForce_ = nullptr;
+    fnGetVer_ = nullptr;
+    fnIsRunning_ = nullptr;
+    fnIsRunningExt_ = nullptr;
+    fnIsInitialized_ = nullptr;
+    fnIsControllerReady_ = nullptr;
+    fnIsIdle_ = nullptr;
+    fnIsEStop_ = nullptr;
+    fnIsStop_ = nullptr;
+    fnIsPause_ = nullptr;
+    fnEStop_ = nullptr;
+    fnEStopToggle_ = nullptr;
+    fnStop_ = nullptr;
+    fnPause_ = nullptr;
+    fnPauseToggle_ = nullptr;
+    fnStart_ = nullptr;
+    fnGetCmdId_ = nullptr;
+    fnCmdExec_ = nullptr;
+    fnCmdExecStr_ = nullptr;
+    fnCmdExecVal_ = nullptr;
+    fnSetParam_ = nullptr;
+    fnGetParam_ = nullptr;
+    fnStartCode_ = nullptr;
+    fnOpenCode_ = nullptr;
+    fnInfoSpeed_ = nullptr;
+    fnInfoSpindle_ = nullptr;
+    fnInfoJogPot_ = nullptr;
+    fnInfoWorkPosition3_ = nullptr;
+    fnInfoMotorPosition3_ = nullptr;
+    fnInfoMotorPosition_ = nullptr;
+    fnInfoWorkPosition_ = nullptr;
+    fnJog_ = nullptr;
+    fnJog9_ = nullptr;
+    fnJogStop_ = nullptr;
+    fnMoveAxis_ = nullptr;
+    fnSetInitialiseCB_ = nullptr;
+    fnSetRefreshCB_ = nullptr;
+    fnSetIdleCB_ = nullptr;
+    fnSetLineNumCB_ = nullptr;
     g_tngInitState.store(0);
 }
 
@@ -426,8 +463,8 @@ bool TngApi::jog(bool step, double x, double y, double z) {
     std::lock_guard<std::mutex> lk(mtx_);
     return fnJog_(step, x, y, z);
 }
-bool TngApi::jog9(bool step, double x, double y, double z,
-                  double a, double b, double c, double u, double v, double w) {
+bool TngApi::jog9(bool step, double x, double y, double z, double a, double b, double c, double u,
+                  double v, double w) {
     if (!fnJog9_) return false;
     std::lock_guard<std::mutex> lk(mtx_);
     return fnJog9_(step, x, y, z, a, b, c, u, v, w);

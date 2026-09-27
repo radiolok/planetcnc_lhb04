@@ -49,11 +49,21 @@ public:
     std::map<std::string, double> params;
 
     // --- Call recording ---
-    struct JogCall { bool step; double x, y, z; };
+    struct JogCall {
+        bool step;
+        double x, y, z;
+    };
     std::vector<JogCall> jogs;
-    struct Jog9Call { bool step; double a, b, c; };
+    struct Jog9Call {
+        bool step;
+        double a, b, c;
+    };
     std::vector<Jog9Call> jogs9;
-    struct MoveAxisCall { double speed; int axis; double value; };
+    struct MoveAxisCall {
+        double speed;
+        int axis;
+        double value;
+    };
     std::vector<MoveAxisCall> moveAxes;
     int jogStops = 0;
     int estopToggles = 0;
@@ -75,11 +85,26 @@ public:
     bool isEStop() override { return estop; }
     bool isPause() override { return paused; }
 
-    bool estopToggle() override { ++estopToggles; return true; }
-    bool stop() override { ++stops; return true; }
-    bool start() override { ++starts; return true; }
-    bool pause(bool on) override { pauses.push_back(on); return true; }
-    bool pauseToggle() override { ++pauseToggles; return true; }
+    bool estopToggle() override {
+        ++estopToggles;
+        return true;
+    }
+    bool stop() override {
+        ++stops;
+        return true;
+    }
+    bool start() override {
+        ++starts;
+        return true;
+    }
+    bool pause(bool on) override {
+        pauses.push_back(on);
+        return true;
+    }
+    bool pauseToggle() override {
+        ++pauseToggles;
+        return true;
+    }
 
     int getCmdId(const std::string& name) override {
         getCmdIds.push_back(name);
@@ -111,32 +136,52 @@ public:
     double infoSpindle() override { return spindle; }
     unsigned infoJogPot() override { return jogPot; }
     bool infoWorkPosition3(double& x, double& y, double& z) override {
-        if (workPosOk) { x = workX; y = workY; z = workZ; }
+        if (workPosOk) {
+            x = workX;
+            y = workY;
+            z = workZ;
+        }
         return workPosOk;
     }
     bool infoMotorPosition3(double& x, double& y, double& z) override {
-        if (motorPosOk) { x = motorX; y = motorY; z = motorZ; }
+        if (motorPosOk) {
+            x = motorX;
+            y = motorY;
+            z = motorZ;
+        }
         return motorPosOk;
     }
     double infoMotorPosition(int axis) override {
         switch (axis) {
-            case 0: return motorX;
-            case 1: return motorY;
-            case 2: return motorZ;
-            case 3: return motorA;
-            case 4: return motorB;
-            case 5: return motorC;
-            default: return 0.0;
+            case 0:
+                return motorX;
+            case 1:
+                return motorY;
+            case 2:
+                return motorZ;
+            case 3:
+                return motorA;
+            case 4:
+                return motorB;
+            case 5:
+                return motorC;
+            default:
+                return 0.0;
         }
     }
 
     double infoWorkPosition(int axis) override {
         switch (axis) {
-            case 0: return workX;
-            case 1: return workY;
-            case 2: return workZ;
-            case 3: return workA;
-            default: return std::numeric_limits<double>::quiet_NaN();
+            case 0:
+                return workX;
+            case 1:
+                return workY;
+            case 2:
+                return workZ;
+            case 3:
+                return workA;
+            default:
+                return std::numeric_limits<double>::quiet_NaN();
         }
     }
 
@@ -144,14 +189,21 @@ public:
         jogs.push_back({step, x, y, z});
         return jogResult;
     }
-    bool jog9(bool step, double x, double y, double z,
-              double a, double b, double c,
-              double u, double v, double w) override {
-        (void)x; (void)y; (void)z; (void)u; (void)v; (void)w;
+    bool jog9(bool step, double x, double y, double z, double a, double b, double c, double u,
+              double v, double w) override {
+        (void)x;
+        (void)y;
+        (void)z;
+        (void)u;
+        (void)v;
+        (void)w;
         jogs9.push_back({step, a, b, c});
         return jogResult;
     }
-    bool jogStop() override { ++jogStops; return true; }
+    bool jogStop() override {
+        ++jogStops;
+        return true;
+    }
     bool moveAxis(double moveSpeed, int axis, double value) override {
         moveAxes.push_back({moveSpeed, axis, value});
         return true;
@@ -584,7 +636,9 @@ static void test_override_spindle_clamped() {
 // ---------------------------------------------------------------------------
 
 static void test_button_estop() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     addButton(cfg, "reset", "estop");
     ButtonHandler bh(api, state, cfg);
     CHECK(bh.onPress("reset"));
@@ -592,7 +646,9 @@ static void test_button_estop() {
 }
 
 static void test_button_stop_start_pause() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     addButton(cfg, "stop", "stop");
     addButton(cfg, "start", "start");
     addButton(cfg, "pause", "pause");
@@ -612,7 +668,9 @@ static void test_button_stop_start_pause() {
 }
 
 static void test_button_toggle_start_pause() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     addButton(cfg, "start_pause", "toggle_start_pause");
     ButtonHandler bh(api, state, cfg);
 
@@ -623,7 +681,9 @@ static void test_button_toggle_start_pause() {
     CHECK_EQ(api.pauses.size(), 0u);
 
     // Idle and not running -> start.
-    api.paused = false; api.idle = true; api.running = false;
+    api.paused = false;
+    api.idle = true;
+    api.running = false;
     CHECK(bh.onPress("start_pause"));
     CHECK_EQ(api.starts, 2);
     CHECK_EQ(api.pauses.size(), 0u);
@@ -637,7 +697,9 @@ static void test_button_toggle_start_pause() {
 }
 
 static void test_button_named_command() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     addButton(cfg, "home", "home_all");
     api.nextCmdId = 11;
     ButtonHandler bh(api, state, cfg);
@@ -650,9 +712,10 @@ static void test_button_named_command() {
 }
 
 static void test_button_feed_override() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
-    cfg.buttons.emplace_back("macro_1",
-                             makeButtonAction("feed_override", "", 20.0));
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
+    cfg.buttons.emplace_back("macro_1", makeButtonAction("feed_override", "", 20.0));
     api.params["_ovrd_speedfeed"] = 1.0;
     ButtonHandler bh(api, state, cfg);
 
@@ -661,7 +724,9 @@ static void test_button_feed_override() {
 }
 
 static void test_button_gcode() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     cfg.buttons.emplace_back("macro_2", makeButtonAction("gcode", "G0 X10"));
     ButtonHandler bh(api, state, cfg);
 
@@ -671,7 +736,9 @@ static void test_button_gcode() {
 }
 
 static void test_button_step_size_cycles() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     cfg.jogging.stepSizes = {0.001, 0.01, 0.1};
     cfg.jogging.defaultStepIndex = 1;
     addButton(cfg, "step", "step_size");
@@ -690,7 +757,9 @@ static void test_button_step_size_cycles() {
 }
 
 static void test_button_step_size_drives_jog_distance() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     cfg.jogging.stepSizes = {0.01, 1.0};
     cfg.jogging.defaultStepIndex = 0;
     addButton(cfg, "step", "step_size");
@@ -709,9 +778,10 @@ static void test_button_step_size_drives_jog_distance() {
 }
 
 static void test_button_override_without_reading() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
-    cfg.buttons.emplace_back("macro_1",
-                             makeButtonAction("feed_override", "", 20.0));
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
+    cfg.buttons.emplace_back("macro_1", makeButtonAction("feed_override", "", 20.0));
     // `_ovrd_speedfeed` is not readable (e.g. TNG not initialized yet).
     ButtonHandler bh(api, state, cfg);
 
@@ -720,7 +790,9 @@ static void test_button_override_without_reading() {
 }
 
 static void test_button_noop_and_unbound() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     addButton(cfg, "macro_3", "noop");
     ButtonHandler bh(api, state, cfg);
 
@@ -729,7 +801,9 @@ static void test_button_noop_and_unbound() {
 }
 
 static void test_button_unknown_action() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     addButton(cfg, "macro_4", "not_a_real_action");
     ButtonHandler bh(api, state, cfg);
     CHECK(!bh.onPress("macro_4"));
@@ -751,9 +825,14 @@ static void test_state_reader_not_initialized() {
 
 static void test_state_reader_reads_all_fields() {
     MockTngApi api;
-    api.workX = 1.0; api.workY = 2.0; api.workZ = 3.0;
-    api.motorX = 4.0; api.motorY = 5.0; api.motorZ = 6.0;
-    api.workA = 7.0; api.motorA = 8.0;
+    api.workX = 1.0;
+    api.workY = 2.0;
+    api.workZ = 3.0;
+    api.motorX = 4.0;
+    api.motorY = 5.0;
+    api.motorZ = 6.0;
+    api.workA = 7.0;
+    api.motorA = 8.0;
     api.speed = 10.0;
     api.spindle = 200.0;
     api.jogPot = 0x12;
@@ -802,12 +881,13 @@ static uint8_t payloadByte(const DisplayUpdater::Frame& f, size_t off) {
 }
 
 static uint16_t readLE16At(const DisplayUpdater::Frame& f, size_t off) {
-    return static_cast<uint16_t>(payloadByte(f, off) |
-                                 (payloadByte(f, off + 1) << 8));
+    return static_cast<uint16_t>(payloadByte(f, off) | (payloadByte(f, off + 1) << 8));
 }
 
 static void test_display_skip_when_axis_off() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     state.pendant.axisCode = xhc::kAxisOff;
     DisplayUpdater du(api, state, cfg);
     DisplayUpdater::Frame f;
@@ -815,7 +895,9 @@ static void test_display_skip_when_axis_off() {
 }
 
 static void test_display_always_sends_when_axis_off() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     cfg.polling.displayAlways = true;
     state.pendant.axisCode = xhc::kAxisOff;
     DisplayUpdater du(api, state, cfg);
@@ -824,7 +906,9 @@ static void test_display_always_sends_when_axis_off() {
 }
 
 static void test_display_forced_frame_when_axis_off() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     state.pendant.axisCode = xhc::kAxisOff;
     DisplayUpdater du(api, state, cfg);
     DisplayUpdater::Frame f;
@@ -832,7 +916,9 @@ static void test_display_forced_frame_when_axis_off() {
 }
 
 static void test_display_a_axis() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     state.pendant.axisCode = xhc::kAxisA;
     state.machine.workX = 1.0;
     state.machine.workA = 45.5;
@@ -852,7 +938,9 @@ static void test_display_a_axis() {
 }
 
 static void test_display_frame_encoding() {
-    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    MockTngApi api;
+    SharedState state;
+    Config cfg = makeConfig();
     api.params["_ovrd_speedfeed"] = 1.0;
     api.params["_ovrd_spindle"] = 0.5;
     state.machine.feed = 50.0;

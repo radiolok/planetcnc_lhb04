@@ -28,8 +28,7 @@ constexpr double kServoVelReissueMmS = 1.0;
 constexpr std::chrono::milliseconds kOwnMotionSettle{500};
 } // namespace
 
-JogController::JogController(ITngApi& api, SharedState& state,
-                             const JoggingConfig& cfg)
+JogController::JogController(ITngApi& api, SharedState& state, const JoggingConfig& cfg)
     : api_(api), state_(state), cfg_(cfg) {
     for (double& t : target_) t = std::numeric_limits<double>::quiet_NaN();
 }
@@ -109,8 +108,7 @@ void JogController::tick() {
         }
         // Machine busy with motion that is not ours (homing, MDI, TNG GUI
         // jog): discard the target and the wheel input.
-        if (!idle && !servoActive_ &&
-            std::chrono::steady_clock::now() >= ownMotionUntil_) {
+        if (!idle && !servoActive_ && std::chrono::steady_clock::now() >= ownMotionUntil_) {
             resetTargets();
             return;
         }
@@ -169,8 +167,8 @@ void JogController::runServo(int axis, bool freshCounts) {
 
     if (servoActive_) {
         if (absErr <= kServoStopDeadbandMm) {
-            logInfo("servo stop  axis=%d target=%.3f pos=%.3f err=%.3f",
-                    axis, target_[axis], current, error);
+            logInfo("servo stop  axis=%d target=%.3f pos=%.3f err=%.3f", axis, target_[axis],
+                    current, error);
             stopServo();
             return;
         }
@@ -182,16 +180,14 @@ void JogController::runServo(int axis, bool freshCounts) {
     // Velocity limited by the braking distance so the axis can decelerate to
     // zero within the remaining error (no overshoot -> no limit cycle).
     // The braking deceleration is jogging.max_decel (<= _motion_maxdec).
-    double vel = std::min(kServoGain * absErr,
-                          std::sqrt(2.0 * cfg_.maxDecel * absErr));
+    double vel = std::min(kServoGain * absErr, std::sqrt(2.0 * cfg_.maxDecel * absErr));
     vel = std::min(vel, maxVel);
     vel = std::copysign(vel, error);
 
     // Only re-issue Jog() when the velocity changes meaningfully. Re-issuing
     // on every tick makes the controller re-ramp and overshoot, which is what
     // drove the limit-cycle oscillation.
-    if (servoActive_ && servoAxis_ == axis &&
-        std::fabs(vel - lastVel_) < kServoVelReissueMmS) {
+    if (servoActive_ && servoAxis_ == axis && std::fabs(vel - lastVel_) < kServoVelReissueMmS) {
         return;
     }
 
@@ -209,8 +205,8 @@ void JogController::runServo(int axis, bool freshCounts) {
     }
     if (ok) {
         if (!servoActive_) {
-            logInfo("servo start axis=%d target=%.3f pos=%.3f err=%.3f vel=%.2f",
-                    axis, target_[axis], current, error, vel);
+            logInfo("servo start axis=%d target=%.3f pos=%.3f err=%.3f vel=%.2f", axis,
+                    target_[axis], current, error, vel);
         }
         servoActive_ = true;
         servoAxis_ = axis;
@@ -225,20 +221,17 @@ void JogController::runServo(int axis, bool freshCounts) {
 }
 
 void JogController::processOverride(bool spindle, int counts) {
-    const std::string& param = spindle ? cfg_.spindleOverrideParam
-                                       : cfg_.feedOverrideParam;
+    const std::string& param = spindle ? cfg_.spindleOverrideParam : cfg_.feedOverrideParam;
     const std::optional<double> current = api_.getParam(param);
     if (!current) {
         // Never compute an override from a value that was not read.
-        logWarn("override: GetParam(%s) failed; wheel input ignored",
-                param.c_str());
+        logWarn("override: GetParam(%s) failed; wheel input ignored", param.c_str());
         return;
     }
     double delta = counts * (cfg_.overrideStep / 100.0);
     double value = std::clamp(*current + delta, kOverrideMin, kOverrideMax);
     if (api_.setParam(param, value)) {
-        logDebug("override: %s %+.2f%% -> %.1f%%", param.c_str(),
-                 delta * 100.0, value * 100.0);
+        logDebug("override: %s %+.2f%% -> %.1f%%", param.c_str(), delta * 100.0, value * 100.0);
     } else {
         logWarn("override: SetParam(%s) failed", param.c_str());
     }

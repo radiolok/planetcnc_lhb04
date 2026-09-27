@@ -30,18 +30,30 @@ constexpr double kMaxCoordinate = 65535.9999;
 
 uint8_t stepsizeDisplayCode(int stepsize) {
     switch (stepsize) {
-        case    0: return xhc::kStepDisplay0;
-        case    1: return xhc::kStepDisplay1;
-        case    5: return xhc::kStepDisplay5;
-        case   10: return xhc::kStepDisplay10;
-        case   20: return xhc::kStepDisplay20;
-        case   30: return xhc::kStepDisplay30;
-        case   40: return xhc::kStepDisplay40;
-        case   50: return xhc::kStepDisplay50;
-        case  100: return xhc::kStepDisplay100;
-        case  500: return xhc::kStepDisplay500;
-        case 1000: return xhc::kStepDisplay1000;
-        default:   return xhc::kStepDisplay0;
+        case 0:
+            return xhc::kStepDisplay0;
+        case 1:
+            return xhc::kStepDisplay1;
+        case 5:
+            return xhc::kStepDisplay5;
+        case 10:
+            return xhc::kStepDisplay10;
+        case 20:
+            return xhc::kStepDisplay20;
+        case 30:
+            return xhc::kStepDisplay30;
+        case 40:
+            return xhc::kStepDisplay40;
+        case 50:
+            return xhc::kStepDisplay50;
+        case 100:
+            return xhc::kStepDisplay100;
+        case 500:
+            return xhc::kStepDisplay500;
+        case 1000:
+            return xhc::kStepDisplay1000;
+        default:
+            return xhc::kStepDisplay0;
     }
 }
 
@@ -57,22 +69,22 @@ ParsedInput PacketParser::parseInput(const uint8_t* data, size_t len) {
         p.reportId = data[xhc::kOffsetReportId];
         return p;
     }
-    p.reportId   = data[xhc::kOffsetReportId];
-    p.button1    = data[xhc::kOffsetButton1];
-    p.button2    = data[xhc::kOffsetButton2];
-    p.axisCode   = data[xhc::kOffsetAxis];
-    p.jogDelta   = static_cast<int8_t>(data[xhc::kOffsetJogDelta]);
+    p.reportId = data[xhc::kOffsetReportId];
+    p.button1 = data[xhc::kOffsetButton1];
+    p.button2 = data[xhc::kOffsetButton2];
+    p.axisCode = data[xhc::kOffsetAxis];
+    p.jogDelta = static_cast<int8_t>(data[xhc::kOffsetJogDelta]);
     p.feedRotary = data[xhc::kOffsetFeed];
 
     // Seed and checksum only exist in the full 8-byte reference report.
     // 6-byte KTURT reports omit them, so leave checksumOk as the default
     // (true) and mark that no checksum verification was performed.
     if (len >= xhc::kInputPacketSize) {
-        p.seed             = data[xhc::kOffsetSeed];
-        p.checksumByte     = data[xhc::kOffsetChecksum];
+        p.seed = data[xhc::kOffsetSeed];
+        p.checksumByte = data[xhc::kOffsetChecksum];
         p.expectedChecksum = computeChecksum(data, len);
-        p.checksumOk       = (p.checksumByte == p.expectedChecksum);
-        p.hasChecksum      = true;
+        p.checksumOk = (p.checksumByte == p.expectedChecksum);
+        p.hasChecksum = true;
     }
     return p;
 }
@@ -114,19 +126,29 @@ void PacketParser::buildDisplayPayload(const DisplayData& d, uint8_t* out) {
     *p++ = 0x0C;
 
     // Work coordinates (line 1 = X or A when the A axis is active).
-    encodeCoordinate(d.line1, p); p += 4;
-    encodeCoordinate(d.line2, p); p += 4;
-    encodeCoordinate(d.line3, p); p += 4;
+    encodeCoordinate(d.line1, p);
+    p += 4;
+    encodeCoordinate(d.line2, p);
+    p += 4;
+    encodeCoordinate(d.line3, p);
+    p += 4;
     // Machine coordinates.
-    encodeCoordinate(d.machine1, p); p += 4;
-    encodeCoordinate(d.machine2, p); p += 4;
-    encodeCoordinate(d.machine3, p); p += 4;
+    encodeCoordinate(d.machine1, p);
+    p += 4;
+    encodeCoordinate(d.machine2, p);
+    p += 4;
+    encodeCoordinate(d.machine3, p);
+    p += 4;
 
     // Override and rate values (x100 / x60 per xhc-hb04 man page).
-    writeS16(p, toS16(d.feedOverride, 100.0));  p += 2;
-    writeS16(p, toS16(d.spindleOverride, 100.0)); p += 2;
-    writeS16(p, toS16(d.feedValue, 60.0));      p += 2;
-    writeS16(p, toS16(d.spindleRps, 60.0));     p += 2;
+    writeS16(p, toS16(d.feedOverride, 100.0));
+    p += 2;
+    writeS16(p, toS16(d.spindleOverride, 100.0));
+    p += 2;
+    writeS16(p, toS16(d.feedValue, 60.0));
+    p += 2;
+    writeS16(p, toS16(d.spindleRps, 60.0));
+    p += 2;
 
     out[xhc::kDispStepsizeByte] = stepsizeDisplayCode(d.stepsize);
 

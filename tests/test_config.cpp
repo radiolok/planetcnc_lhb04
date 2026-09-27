@@ -64,21 +64,21 @@ void test_parse_error_is_fatal() {
 
 void test_invalid_values_all_reported() {
     auto path = writeTemp("mpgd_test_invalid.yaml",
-        "polling:\n"
-        "  usb_hz: 2000\n"
-        "  display_hz: 0\n"
-        "  jog_hz: 5000\n"
-        "jogging:\n"
-        "  jog_speed: -1\n"
-        "  max_decel: 0\n"
-        "  max_speed: 0\n"
-        "  step_sizes: [0.01, 0]\n"
-        "logging:\n"
-        "  level: verbose\n"
-        "buttons:\n"
-        "  resett: { action: estop }\n"
-        "  stop:   { action: stahp }\n"
-        "  home:   { action: command }\n");
+                          "polling:\n"
+                          "  usb_hz: 2000\n"
+                          "  display_hz: 0\n"
+                          "  jog_hz: 5000\n"
+                          "jogging:\n"
+                          "  jog_speed: -1\n"
+                          "  max_decel: 0\n"
+                          "  max_speed: 0\n"
+                          "  step_sizes: [0.01, 0]\n"
+                          "logging:\n"
+                          "  level: verbose\n"
+                          "buttons:\n"
+                          "  resett: { action: estop }\n"
+                          "  stop:   { action: stahp }\n"
+                          "  home:   { action: command }\n");
     Config cfg;
     std::string err;
     CHECK(!ConfigManager::load(path, cfg, err));
@@ -98,8 +98,8 @@ void test_invalid_values_all_reported() {
 
 void test_buttons_section_replaces_defaults() {
     auto path = writeTemp("mpgd_test_buttons.yaml",
-        "buttons:\n"
-        "  macro_1: { action: noop }\n");
+                          "buttons:\n"
+                          "  macro_1: { action: noop }\n");
     Config cfg;
     std::string err;
     CHECK(ConfigManager::load(path, cfg, err));
@@ -110,8 +110,8 @@ void test_buttons_section_replaces_defaults() {
 
 void test_no_buttons_section_keeps_defaults() {
     auto path = writeTemp("mpgd_test_nobuttons.yaml",
-        "polling:\n"
-        "  usb_hz: 50\n");
+                          "polling:\n"
+                          "  usb_hz: 50\n");
     Config cfg;
     std::string err;
     CHECK(ConfigManager::load(path, cfg, err));
@@ -144,10 +144,10 @@ void test_action_names_resolve_to_types() {
 
 void test_partial_sections_keep_other_defaults() {
     auto path = writeTemp("mpgd_test_partial.yaml",
-        "jogging:\n"
-        "  max_speed: 1500\n"
-        "polling:\n"
-        "  display_hz: 10\n");
+                          "jogging:\n"
+                          "  max_speed: 1500\n"
+                          "polling:\n"
+                          "  display_hz: 10\n");
     Config cfg;
     std::string err;
     CHECK(ConfigManager::load(path, cfg, err));

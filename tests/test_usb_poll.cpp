@@ -51,8 +51,7 @@ public:
             data[xhc::kOffsetReportId] = xhc::kInputReportId;
             data[xhc::kOffsetAxis] = xhc::kAxisX;
             data[xhc::kOffsetJogDelta] = static_cast<uint8_t>(r.jog);
-            data[xhc::kOffsetChecksum] =
-                usb::PacketParser::computeChecksum(data, length);
+            data[xhc::kOffsetChecksum] = usb::PacketParser::computeChecksum(data, length);
         }
         return r.rc;
     }

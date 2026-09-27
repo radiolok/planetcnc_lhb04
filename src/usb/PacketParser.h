@@ -13,7 +13,7 @@ struct ParsedInput {
     uint8_t button1 = 0;   // active button code (0 = none)
     uint8_t button2 = 0;   // secondary button code
     uint8_t axisCode = 0;  // raw rotary selector position
-    int8_t  jogDelta = 0;  // MPG wheel delta (-128..127)
+    int8_t jogDelta = 0;  // MPG wheel delta (-128..127)
     uint8_t feedRotary = 0;
     uint8_t seed = 0;
     uint8_t checksumByte = 0;

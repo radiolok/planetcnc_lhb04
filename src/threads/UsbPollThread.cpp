@@ -16,8 +16,7 @@ void hexdump(const uint8_t* data, size_t len) {
     char line[64];
     size_t off = 0;
     for (size_t i = 0; i < len && off < sizeof(line) - 4; ++i) {
-        off += static_cast<size_t>(
-            std::snprintf(line + off, sizeof(line) - off, "%02X ", data[i]));
+        off += static_cast<size_t>(std::snprintf(line + off, sizeof(line) - off, "%02X ", data[i]));
     }
     logInfo("raw[%zu]: %s", len, line);
 }
@@ -29,12 +28,10 @@ public:
                    const DeviceConfig& deviceCfg)
         : readDevice_(readDevice), writeDevice_(writeDevice), deviceCfg_(deviceCfg) {}
 
-    bool isOpen() const override {
-        return readDevice_.isOpen() && writeDevice_.isOpen();
-    }
+    bool isOpen() const override { return readDevice_.isOpen() && writeDevice_.isOpen(); }
     bool open(std::string& error) override {
-        return usb::openReadWrite(deviceCfg_.vendorId, deviceCfg_.productIds,
-                                  readDevice_, writeDevice_, error);
+        return usb::openReadWrite(deviceCfg_.vendorId, deviceCfg_.productIds, readDevice_,
+                                  writeDevice_, error);
     }
     void close() override {
         readDevice_.close();
@@ -57,15 +54,17 @@ private:
 
 UsbPollThread::UsbPollThread(SharedState& state, usb::HidDevice& readDevice,
                              usb::HidDevice& writeDevice, XhcPendant& pendant,
-                             const DeviceConfig& deviceCfg,
-                             const PollingConfig& polling, bool sniff)
+                             const DeviceConfig& deviceCfg, const PollingConfig& polling,
+                             bool sniff)
     : ownedLink_(std::make_unique<HidPendantLink>(readDevice, writeDevice, deviceCfg)),
-      state_(state), link_(*ownedLink_), pendant_(pendant), polling_(polling),
+      state_(state),
+      link_(*ownedLink_),
+      pendant_(pendant),
+      polling_(polling),
       sniff_(sniff) {}
 
-UsbPollThread::UsbPollThread(SharedState& state, IPendantLink& link,
-                             XhcPendant& pendant, const PollingConfig& polling,
-                             bool sniff)
+UsbPollThread::UsbPollThread(SharedState& state, IPendantLink& link, XhcPendant& pendant,
+                             const PollingConfig& polling, bool sniff)
     : state_(state), link_(link), pendant_(pendant), polling_(polling), sniff_(sniff) {}
 
 UsbPollThread::~UsbPollThread() = default;
@@ -88,8 +87,7 @@ void UsbPollThread::markDisconnected() {
 }
 
 void UsbPollThread::run() {
-    logInfo("usb poll thread started (period=%dms, reconnect=%dms)",
-            pollPeriodMs(), reconnectMs());
+    logInfo("usb poll thread started (period=%dms, reconnect=%dms)", pollPeriodMs(), reconnectMs());
 
     while (!state_.shutdown.load()) {
         pollOnce();

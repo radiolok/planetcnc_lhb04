@@ -96,7 +96,8 @@ void applyJogging(const YAML::Node& n, JoggingConfig& c) {
     if (n["max_speed"]) c.maxSpeed = n["max_speed"].as<double>();
     if (n["override_step"]) c.overrideStep = n["override_step"].as<double>();
     if (n["feed_override_param"]) c.feedOverrideParam = n["feed_override_param"].as<std::string>();
-    if (n["spindle_override_param"]) c.spindleOverrideParam = n["spindle_override_param"].as<std::string>();
+    if (n["spindle_override_param"])
+        c.spindleOverrideParam = n["spindle_override_param"].as<std::string>();
     if (n["jog_speed"]) c.jogSpeed = n["jog_speed"].as<double>();
     if (n["max_decel"]) c.maxDecel = n["max_decel"].as<double>();
 }
@@ -112,11 +113,12 @@ void applyButtons(const YAML::Node& n, Config& c) {
         std::string command;
         double delta = 0.0;
         if (b["action"]) action = b["action"].as<std::string>();
-        if (b["cmd"]) command = b["cmd"].as<std::string>();
-        else if (b["command"]) command = b["command"].as<std::string>();
+        if (b["cmd"])
+            command = b["cmd"].as<std::string>();
+        else if (b["command"])
+            command = b["command"].as<std::string>();
         if (b["delta"]) delta = b["delta"].as<double>();
-        c.buttons.emplace_back(std::move(name),
-                               makeButtonAction(action, command, delta));
+        c.buttons.emplace_back(std::move(name), makeButtonAction(action, command, delta));
     }
 }
 
@@ -129,8 +131,7 @@ ActionType parseActionType(const std::string& name) {
     return ActionType::Unknown;
 }
 
-ButtonAction makeButtonAction(const std::string& name,
-                              const std::string& command, double delta) {
+ButtonAction makeButtonAction(const std::string& name, const std::string& command, double delta) {
     ButtonAction a;
     a.type = parseActionType(name);
     a.name = name;
@@ -176,8 +177,7 @@ bool ConfigManager::validate(const Config& cfg, std::string& error) {
             break;
         }
     }
-    if (j.defaultStepIndex < 0 ||
-        j.defaultStepIndex >= static_cast<int>(j.stepSizes.size())) {
+    if (j.defaultStepIndex < 0 || j.defaultStepIndex >= static_cast<int>(j.stepSizes.size())) {
         bad("jogging.default_step_index is outside jogging.step_sizes");
     }
     if (!(j.maxSpeed > 0.0)) bad("jogging.max_speed must be > 0");
@@ -206,8 +206,7 @@ bool ConfigManager::validate(const Config& cfg, std::string& error) {
         if (!isKnownButton(name)) bad("buttons: unknown button '" + name + "'");
         if (a.type == ActionType::Unknown) {
             bad("buttons." + name + ": unknown action '" + a.name + "'");
-        } else if ((a.type == ActionType::Command ||
-                    a.type == ActionType::GCode) &&
+        } else if ((a.type == ActionType::Command || a.type == ActionType::GCode) &&
                    a.command.empty()) {
             bad("buttons." + name + ": action '" + a.name + "' needs `cmd`");
         }
@@ -243,8 +242,8 @@ bool ConfigManager::load(const std::string& path, Config& out, std::string& erro
     return validate(out, error);
 }
 
-bool ConfigManager::loadOrDefault(const std::string& path, Config& out,
-                                  std::string& error, bool& missing) {
+bool ConfigManager::loadOrDefault(const std::string& path, Config& out, std::string& error,
+                                  bool& missing) {
     out = Config{};
     missing = false;
     std::error_code ec;
@@ -255,8 +254,7 @@ bool ConfigManager::loadOrDefault(const std::string& path, Config& out,
     return load(path, out, error);
 }
 
-const ButtonAction* ConfigManager::findAction(const Config& cfg,
-                                              const std::string& buttonName) {
+const ButtonAction* ConfigManager::findAction(const Config& cfg, const std::string& buttonName) {
     for (const auto& [name, action] : cfg.buttons) {
         if (name == buttonName) return &action;
     }

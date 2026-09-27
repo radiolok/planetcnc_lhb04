@@ -10,11 +10,13 @@
 
 namespace mpgd {
 
-DisplayThread::DisplayThread(SharedState& state, usb::HidDevice& device,
-                             DisplayUpdater& updater, StateReader& stateReader,
-                             int periodMs)
-    : state_(state), device_(device), updater_(updater),
-      stateReader_(stateReader), periodMs_(periodMs) {}
+DisplayThread::DisplayThread(SharedState& state, usb::HidDevice& device, DisplayUpdater& updater,
+                             StateReader& stateReader, int periodMs)
+    : state_(state),
+      device_(device),
+      updater_(updater),
+      stateReader_(stateReader),
+      periodMs_(periodMs) {}
 
 void DisplayThread::run() {
     logInfo("display thread started (period=%dms)", periodMs_);

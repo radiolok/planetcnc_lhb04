@@ -81,9 +81,8 @@ int axisIndex(const std::string& s) {
     return -1;
 }
 
-bool parseArgs(int argc, char** argv, Options& opts, std::string& jogMode,
-               int& jogAxis, double& jogValue, bool& hasJogValue,
-               double& jogSeconds) {
+bool parseArgs(int argc, char** argv, Options& opts, std::string& jogMode, int& jogAxis,
+               double& jogValue, bool& hasJogValue, double& jogSeconds) {
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto need = [&](const char* flag) -> const char* {
@@ -93,21 +92,96 @@ bool parseArgs(int argc, char** argv, Options& opts, std::string& jogMode,
             }
             return argv[++i];
         };
-        if (a == "--lib") { const char* v = need("--lib"); if (!v) return false; opts.libPath = v; }
-        else if (a == "--profile") { const char* v = need("--profile"); if (!v) return false; opts.profile = v; }
-        else if (a == "--attach") { opts.attach = true; }
-        else if (a == "--gui") { opts.gui = true; }
-        else if (a == "--axis") { const char* v = need("--axis"); if (!v) return false; jogAxis = axisIndex(v); if (jogAxis < 0) { std::fprintf(stderr, "error: bad --axis '%s'\n", v); return false; } }
-        else if (a == "--value") { const char* v = need("--value"); if (!v) return false; try { jogValue = std::stod(v); hasJogValue = true; } catch (...) { std::fprintf(stderr, "error: bad --value '%s'\n", v); return false; } }
-        else if (a == "--mode") { const char* v = need("--mode"); if (!v) return false; jogMode = v; if (jogMode != "step" && jogMode != "cont") { std::fprintf(stderr, "error: bad --mode '%s'\n", v); return false; } }
-        else if (a == "--seconds") { const char* v = need("--seconds"); if (!v) return false; try { jogSeconds = std::stod(v); if (jogSeconds <= 0) { std::fprintf(stderr, "error: --seconds must be > 0\n"); return false; } } catch (...) { std::fprintf(stderr, "error: bad --seconds '%s'\n", v); return false; } }
-        else if (a == "--setstep") { const char* v = need("--setstep"); if (!v) return false; try { opts.setStep = std::stod(v); opts.hasSetStep = true; } catch (...) { std::fprintf(stderr, "error: bad --setstep '%s'\n", v); return false; } }
-        else if (a == "--delta") { const char* v = need("--delta"); if (!v) return false; try { opts.moveDelta = std::stod(v); opts.hasMoveDelta = true; } catch (...) { std::fprintf(stderr, "error: bad --delta '%s'\n", v); return false; } }
-        else if (a == "--speed") { const char* v = need("--speed"); if (!v) return false; try { opts.moveSpeed = std::stod(v); } catch (...) { std::fprintf(stderr, "error: bad --speed '%s'\n", v); return false; } }
-        else if (a == "--help" || a == "-h") { opts.help = true; }
-        else if (!a.empty() && a[0] == '-' && a.size() > 1) { std::fprintf(stderr, "error: unknown option '%s'\n", a.c_str()); return false; }
-        else if (opts.command == "status" && opts.args.empty()) { opts.command = a; }
-        else { opts.args.push_back(a); }
+        if (a == "--lib") {
+            const char* v = need("--lib");
+            if (!v) return false;
+            opts.libPath = v;
+        } else if (a == "--profile") {
+            const char* v = need("--profile");
+            if (!v) return false;
+            opts.profile = v;
+        } else if (a == "--attach") {
+            opts.attach = true;
+        } else if (a == "--gui") {
+            opts.gui = true;
+        } else if (a == "--axis") {
+            const char* v = need("--axis");
+            if (!v) return false;
+            jogAxis = axisIndex(v);
+            if (jogAxis < 0) {
+                std::fprintf(stderr, "error: bad --axis '%s'\n", v);
+                return false;
+            }
+        } else if (a == "--value") {
+            const char* v = need("--value");
+            if (!v) return false;
+            try {
+                jogValue = std::stod(v);
+                hasJogValue = true;
+            } catch (...) {
+                std::fprintf(stderr, "error: bad --value '%s'\n", v);
+                return false;
+            }
+        } else if (a == "--mode") {
+            const char* v = need("--mode");
+            if (!v) return false;
+            jogMode = v;
+            if (jogMode != "step" && jogMode != "cont") {
+                std::fprintf(stderr, "error: bad --mode '%s'\n", v);
+                return false;
+            }
+        } else if (a == "--seconds") {
+            const char* v = need("--seconds");
+            if (!v) return false;
+            try {
+                jogSeconds = std::stod(v);
+                if (jogSeconds <= 0) {
+                    std::fprintf(stderr, "error: --seconds must be > 0\n");
+                    return false;
+                }
+            } catch (...) {
+                std::fprintf(stderr, "error: bad --seconds '%s'\n", v);
+                return false;
+            }
+        } else if (a == "--setstep") {
+            const char* v = need("--setstep");
+            if (!v) return false;
+            try {
+                opts.setStep = std::stod(v);
+                opts.hasSetStep = true;
+            } catch (...) {
+                std::fprintf(stderr, "error: bad --setstep '%s'\n", v);
+                return false;
+            }
+        } else if (a == "--delta") {
+            const char* v = need("--delta");
+            if (!v) return false;
+            try {
+                opts.moveDelta = std::stod(v);
+                opts.hasMoveDelta = true;
+            } catch (...) {
+                std::fprintf(stderr, "error: bad --delta '%s'\n", v);
+                return false;
+            }
+        } else if (a == "--speed") {
+            const char* v = need("--speed");
+            if (!v) return false;
+            try {
+                opts.moveSpeed = std::stod(v);
+            } catch (...) {
+                std::fprintf(stderr, "error: bad --speed '%s'\n", v);
+                return false;
+            }
+        } else if (a == "--help" || a == "-h") {
+            opts.help = true;
+        } else if (!a.empty() && a[0] == '-' && a.size() > 1) {
+            std::fprintf(stderr, "error: unknown option '%s'\n", a.c_str());
+            return false;
+        } else if (opts.command == "status" && opts.args.empty()) {
+            opts.command = a;
+        } else {
+            opts.args.push_back(a);
+        }
     }
     return true;
 }
@@ -144,19 +218,19 @@ void printState(mpgd::TngApi& api) {
 // "Settings - Program Options"). The legacy names are the previous mpgd guess.
 const std::vector<std::pair<const char*, const char*>>& probeParams() {
     static const std::vector<std::pair<const char*, const char*>> p = {
-        {"_ovrd_speedfeed",   "feed override (documented)"},
-        {"_ovrd_spindle",     "spindle override (documented)"},
-        {"_ovrd_speedtraverse","traverse override (documented)"},
-        {"_jog_speed",        "jog speed (documented)"},
-        {"_jog_speeddef",     "jog speed default (documented)"},
-        {"_jog_step",         "jog step (documented)"},
-        {"_jog_stepdef",      "jog step default (documented)"},
-        {"_jog_round",        "jog rounding (documented)"},
-        {"_speed_feed",       "feed speed (documented)"},
-        {"_speed_spindle",    "spindle speed (documented)"},
-        {"_speed_traverse",   "traverse speed (documented)"},
+        {"_ovrd_speedfeed", "feed override (documented)"},
+        {"_ovrd_spindle", "spindle override (documented)"},
+        {"_ovrd_speedtraverse", "traverse override (documented)"},
+        {"_jog_speed", "jog speed (documented)"},
+        {"_jog_speeddef", "jog speed default (documented)"},
+        {"_jog_step", "jog step (documented)"},
+        {"_jog_stepdef", "jog step default (documented)"},
+        {"_jog_round", "jog rounding (documented)"},
+        {"_speed_feed", "feed speed (documented)"},
+        {"_speed_spindle", "spindle speed (documented)"},
+        {"_speed_traverse", "traverse speed (documented)"},
         {"SpeedFeedOverride", "feed override (legacy mpgd guess)"},
-        {"SpeedSpindleOverride","spindle override (legacy mpgd guess)"},
+        {"SpeedSpindleOverride", "spindle override (legacy mpgd guess)"},
     };
     return p;
 }
@@ -217,11 +291,16 @@ void printCommands(mpgd::TngApi& api, const std::vector<std::string>& names) {
 
 const char* axisName(int axis) {
     switch (axis) {
-        case 0: return "X";
-        case 1: return "Y";
-        case 2: return "Z";
-        case 3: return "A";
-        default: return "?";
+        case 0:
+            return "X";
+        case 1:
+            return "Y";
+        case 2:
+            return "Z";
+        case 3:
+            return "A";
+        default:
+            return "?";
     }
 }
 
@@ -249,25 +328,21 @@ bool waitIdle(mpgd::TngApi& api, int timeoutMs) {
 }
 
 void reportPosition(const char* tag, const AxisPos& p, int axis) {
-    std::printf("  %-8s work  X=% .4f Y=% .4f Z=% .4f\n",
-                tag, p.work[0], p.work[1], p.work[2]);
-    std::printf("  %-8s motor X=% .4f Y=% .4f Z=% .4f\n",
-                tag, p.motor[0], p.motor[1], p.motor[2]);
+    std::printf("  %-8s work  X=% .4f Y=% .4f Z=% .4f\n", tag, p.work[0], p.work[1], p.work[2]);
+    std::printf("  %-8s motor X=% .4f Y=% .4f Z=% .4f\n", tag, p.motor[0], p.motor[1], p.motor[2]);
     (void)axis;
 }
 
-bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value,
-            double seconds, double setStep, bool hasSetStep) {
+bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value, double seconds,
+            double setStep, bool hasSetStep) {
     if (axis < 0) {
         std::fprintf(stderr, "error: jog requires --axis X|Y|Z|A\n");
         return false;
     }
     const bool step = (mode == "step");
     std::printf("state: controllerReady=%s idle=%s estop=%s stop=%s\n",
-                api.isControllerReady() ? "true" : "false",
-                api.isIdle() ? "true" : "false",
-                api.isEStop() ? "true" : "false",
-                api.isStop() ? "true" : "false");
+                api.isControllerReady() ? "true" : "false", api.isIdle() ? "true" : "false",
+                api.isEStop() ? "true" : "false", api.isStop() ? "true" : "false");
     if (!api.isControllerReady()) {
         std::printf("WARNING: IsControllerReady()=false; jog may not move\n");
     }
@@ -291,17 +366,18 @@ bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value,
     v[axis] = value;
 
     AxisPos before = readPositions(api);
-    std::printf("== jog %s, axis=%s, value=%.4f ==\n",
-                step ? "STEP" : "CONT", axisName(axis), value);
+    std::printf("== jog %s, axis=%s, value=%.4f ==\n", step ? "STEP" : "CONT", axisName(axis),
+                value);
     reportPosition("before", before, axis);
 
     const auto t0 = std::chrono::steady_clock::now();
 
     bool ok = false;
-    if (axis < 3) ok = api.jog(step, v[0], v[1], v[2]);
-    else ok = api.jog9(step, v[0], v[1], v[2], v[3], v[4], v[5], 0, 0, 0);
-    std::printf("Jog(step=%s) -> %s\n", step ? "true" : "false",
-                ok ? "ok" : "FAILED");
+    if (axis < 3)
+        ok = api.jog(step, v[0], v[1], v[2]);
+    else
+        ok = api.jog9(step, v[0], v[1], v[2], v[3], v[4], v[5], 0, 0, 0);
+    std::printf("Jog(step=%s) -> %s\n", step ? "true" : "false", ok ? "ok" : "FAILED");
     if (!ok) return false;
 
     if (step) {
@@ -310,9 +386,8 @@ bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value,
         for (int i = 1; i <= samples; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             AxisPos p = readPositions(api);
-            std::printf("  t=%5.1fs  motor[%s]=% .4f  idle=%s\n",
-                        i * 0.2, axisName(axis), p.motor[axis],
-                        api.isIdle() ? "true" : "false");
+            std::printf("  t=%5.1fs  motor[%s]=% .4f  idle=%s\n", i * 0.2, axisName(axis),
+                        p.motor[axis], api.isIdle() ? "true" : "false");
         }
     } else {
         // Poll position during the move to capture the cruise speed slope.
@@ -321,8 +396,7 @@ bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value,
         for (int i = 1; i <= polls; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             AxisPos p = readPositions(api);
-            std::printf("  t=%5.1fs  motor[%s]=% .4f\n",
-                        i * 0.2, axisName(axis), p.motor[axis]);
+            std::printf("  t=%5.1fs  motor[%s]=% .4f\n", i * 0.2, axisName(axis), p.motor[axis]);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs % 200));
         bool stopped = api.jogStop();
@@ -340,12 +414,12 @@ bool runJog(mpgd::TngApi& api, const std::string& mode, int axis, double value,
     if (before.haveMotor && after.haveMotor) {
         const double delta = after.motor[axis] - before.motor[axis];
         if (step) {
-            std::printf("STEP result: requested=%.4f mm, motor delta=%+.4f mm\n",
-                        value, delta);
+            std::printf("STEP result: requested=%.4f mm, motor delta=%+.4f mm\n", value, delta);
         } else {
-            std::printf("CONT result: requested=%.4f mm/min, dt=%.3f s, "
-                        "motor delta=%+.4f mm, measured speed=%.2f mm/min\n",
-                        value, dt, delta, dt > 0 ? (delta / dt) * 60.0 : 0.0);
+            std::printf(
+                "CONT result: requested=%.4f mm/min, dt=%.3f s, "
+                "motor delta=%+.4f mm, measured speed=%.2f mm/min\n",
+                value, dt, delta, dt > 0 ? (delta / dt) * 60.0 : 0.0);
         }
     } else {
         std::printf("(motor position unavailable; cannot compute delta)\n");
@@ -391,9 +465,8 @@ bool runMove(mpgd::TngApi& api, int axis, double delta, double speed) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         AxisPos p = readPositions(api);
         bool idle = api.isIdle();
-        std::printf("  t=%5.1fs  motor[%s]=% .4f  idle=%s\n",
-                    i * 0.2, axisName(axis), p.motor[axis],
-                    idle ? "true" : "false");
+        std::printf("  t=%5.1fs  motor[%s]=% .4f  idle=%s\n", i * 0.2, axisName(axis),
+                    p.motor[axis], idle ? "true" : "false");
         if (idle) break;
     }
     const auto t1 = std::chrono::steady_clock::now();
@@ -401,11 +474,11 @@ bool runMove(mpgd::TngApi& api, int axis, double delta, double speed) {
 
     AxisPos after = readPositions(api);
     const double actual = after.motor[axis];
-    std::printf("MOVE result: target=%.4f, actual=%.4f, delta=%.4f, dt=%.3f s, "
-                "avg speed=%.2f mm/s (%.1f mm/min)\n",
-                target, actual, actual - p0, dt,
-                dt > 0 ? (actual - p0) / dt : 0.0,
-                dt > 0 ? (actual - p0) / dt * 60.0 : 0.0);
+    std::printf(
+        "MOVE result: target=%.4f, actual=%.4f, delta=%.4f, dt=%.3f s, "
+        "avg speed=%.2f mm/s (%.1f mm/min)\n",
+        target, actual, actual - p0, dt, dt > 0 ? (actual - p0) / dt : 0.0,
+        dt > 0 ? (actual - p0) / dt * 60.0 : 0.0);
     return true;
 }
 
@@ -419,8 +492,7 @@ int main(int argc, char** argv) {
     bool hasJogValue = false;
     double jogSeconds = 1.0;
 
-    if (!parseArgs(argc, argv, opts, jogMode, jogAxis, jogValue, hasJogValue,
-                   jogSeconds)) {
+    if (!parseArgs(argc, argv, opts, jogMode, jogAxis, jogValue, hasJogValue, jogSeconds)) {
         printUsage(argv[0]);
         return 2;
     }
@@ -455,8 +527,10 @@ int main(int argc, char** argv) {
         // drive the API from the main thread (validated on real hardware).
         tngThread = std::thread([&] {
             bool ok = false;
-            if (opts.profile.empty()) ok = api.run(!opts.gui);
-            else ok = api.runProfile(!opts.gui, opts.profile);
+            if (opts.profile.empty())
+                ok = api.run(!opts.gui);
+            else
+                ok = api.runProfile(!opts.gui, opts.profile);
             tngRunOk.store(ok);
         });
 
@@ -465,8 +539,7 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             waited += 100;
         }
-        mpgd::logInfo("TNG %s", api.isInitialized()
-                                 ? "initialized" : "not initialized (timeout)");
+        mpgd::logInfo("TNG %s", api.isInitialized() ? "initialized" : "not initialized (timeout)");
         if (!api.isInitialized()) {
             mpgd::logError("TNG did not initialize; aborting");
             api.exitTngForce();
@@ -490,8 +563,8 @@ int main(int argc, char** argv) {
         } else if (!hasJogValue) {
             std::fprintf(stderr, "error: jog requires --value <num>\n");
             rc = 2;
-        } else if (!runJog(api, jogMode, jogAxis, jogValue, jogSeconds,
-                           opts.setStep, opts.hasSetStep)) {
+        } else if (!runJog(api, jogMode, jogAxis, jogValue, jogSeconds, opts.setStep,
+                           opts.hasSetStep)) {
             rc = 1;
         }
     } else if (opts.command == "move") {

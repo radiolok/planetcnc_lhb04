@@ -19,8 +19,8 @@ class XhcPendant {
 public:
     using Clock = std::chrono::steady_clock;
 
-    XhcPendant(SharedState& state, ButtonQueue& buttons,
-               const PollingConfig& polling, bool verifyChecksum);
+    XhcPendant(SharedState& state, ButtonQueue& buttons, const PollingConfig& polling,
+               bool verifyChecksum);
 
     // Processes one raw 8-byte input report. Returns false for malformed
     // packets (wrong report id / short buffer / checksum mismatch when
