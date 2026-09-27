@@ -11,13 +11,11 @@ struct ButtonAction {
     std::string action;              // "estop", "stop", "home_all", ...
     std::string command;             // used by "command"/"gcode" actions
     double delta = 0.0;              // used by override actions (percent)
-    double value = 0.0;              // generic numeric value
 };
 
 struct DeviceConfig {
     uint16_t vendorId = 0x10CE;
     std::vector<uint16_t> productIds{0xEB70, 0xEB71, 0xEB93};
-    bool autoDetect = true;
     bool verifyChecksum = false;     // reference driver does not verify; opt-in
 };
 
@@ -29,8 +27,10 @@ struct PlanetCncConfig {
 
 struct JoggingConfig {
     std::vector<double> stepSizes{0.001, 0.01, 0.1, 1.0};  // mm
+    // Index into stepSizes selected at start-up; the `step_size` button
+    // action cycles through the list from there.
+    int defaultStepIndex = 1;
     double maxSpeed = 1000.0;        // mm/min
-    std::string mode = "step";       // "step" | "continuous"
     double overrideStep = 10.0;      // percent per wheel click for override
     std::string feedOverrideParam = "_ovrd_speedfeed";
     std::string spindleOverrideParam = "_ovrd_spindle";
@@ -61,18 +61,33 @@ struct Config {
     JoggingConfig jogging;
     PollingConfig polling;
     LoggingConfig logging;
-    // button name (canonical, see XhcProtocol.h) -> action
-    std::vector<std::pair<std::string, ButtonAction>> buttons;
+    // button name (canonical, see XhcProtocol.h) -> action. Defaults to the
+    // bindings shipped in config/mpgd.yaml; a `buttons` section in the file
+    // replaces them entirely.
+    std::vector<std::pair<std::string, ButtonAction>> buttons = defaultButtons();
+
+    static std::vector<std::pair<std::string, ButtonAction>> defaultButtons();
 };
 
 class ConfigManager {
 public:
-    // Loads the YAML file into `out`. Returns true on success.
+    // Loads the YAML file into `out` and validates the result. Returns false
+    // with every problem listed in `error` when the file cannot be read or
+    // parsed, or when any value is invalid.
     static bool load(const std::string& path, Config& out, std::string& error);
 
-    // Loads defaults and overlays the optional file. Never fails: on a
-    // missing/invalid file the defaults are returned and `error` is set.
-    static Config loadOrDefault(const std::string& path, std::string& error);
+    // Loads defaults and overlays the file. A missing file is not an error:
+    // the defaults are kept and `missing` is set. Any other problem (parse
+    // error, invalid value) returns false; the caller must not start.
+    static bool loadOrDefault(const std::string& path, Config& out,
+                              std::string& error, bool& missing);
+
+    // Checks every value in `cfg`. Returns false with all problems listed
+    // (one per line) in `error`.
+    static bool validate(const Config& cfg, std::string& error);
+
+    // True for the action names ButtonHandler understands.
+    static bool isKnownAction(const std::string& action);
 
     // Looks up the action bound to a canonical button name. Returns nullptr
     // when no action is configured.

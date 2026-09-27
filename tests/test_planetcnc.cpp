@@ -94,10 +94,11 @@ public:
         params[name] = value;
         return setParamResult;
     }
-    double getParam(const std::string& name) override {
+    std::optional<double> getParam(const std::string& name) override {
         getParams.push_back(name);
         auto it = params.find(name);
-        return it == params.end() ? 0.0 : it->second;
+        if (it == params.end()) return std::nullopt;
+        return it->second;
     }
 
     bool startCode(const std::string& gcode) override {
@@ -147,7 +148,9 @@ public:
 };
 
 Config makeConfig() {
-    return Config{};
+    Config cfg;
+    cfg.buttons.clear();  // tests bind only the buttons they exercise
+    return cfg;
 }
 
 void addButton(Config& cfg, const std::string& name, const std::string& action) {
@@ -637,16 +640,55 @@ static void test_button_gcode() {
     CHECK_EQ(api.startCodes[0], std::string("G0 X10"));
 }
 
-static void test_button_toggle_jog_mode() {
+static void test_button_step_size_cycles() {
     MockTngApi api; SharedState state; Config cfg = makeConfig();
-    addButton(cfg, "mode", "toggle_jog_mode");
+    cfg.jogging.stepSizes = {0.001, 0.01, 0.1};
+    cfg.jogging.defaultStepIndex = 1;
+    addButton(cfg, "step", "step_size");
     ButtonHandler bh(api, state, cfg);
 
-    state.jogMode = JogMode::Step;
-    CHECK(bh.onPress("mode"));
-    CHECK(state.jogMode == JogMode::Continuous);
-    CHECK(bh.onPress("mode"));
-    CHECK(state.jogMode == JogMode::Step);
+    // Constructor applies the configured default step.
+    CHECK_EQ(state.stepSizeIndex, 1);
+    CHECK_NEAR(state.stepSize, 0.01, 1e-12);
+
+    CHECK(bh.onPress("step"));
+    CHECK_NEAR(state.stepSize, 0.1, 1e-12);
+    CHECK(bh.onPress("step"));
+    CHECK_NEAR(state.stepSize, 0.001, 1e-12);  // wraps around
+    CHECK(bh.onPress("step"));
+    CHECK_NEAR(state.stepSize, 0.01, 1e-12);
+}
+
+static void test_button_step_size_drives_jog_distance() {
+    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    cfg.jogging.stepSizes = {0.01, 1.0};
+    cfg.jogging.defaultStepIndex = 0;
+    addButton(cfg, "step", "step_size");
+    ButtonHandler bh(api, state, cfg);
+    CHECK(bh.onPress("step"));  // -> 1.0 mm per click
+
+    state.pendant.axisCode = xhc::kAxisX;
+    state.pendant.jogCounts.store(2);
+    api.motorX = 0.0;
+    JogController jc(api, state, cfg.jogging);
+    jc.tick();
+
+    // 2 mm error -> the servo starts moving in +X.
+    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK(api.jogs[0].x > 0.0);
+}
+
+static void test_button_override_without_reading() {
+    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    ButtonAction a;
+    a.action = "feed_override";
+    a.delta = 20.0;
+    cfg.buttons.emplace_back("macro_1", a);
+    // `_ovrd_speedfeed` is not readable (e.g. TNG not initialized yet).
+    ButtonHandler bh(api, state, cfg);
+
+    CHECK(!bh.onPress("macro_1"));
+    CHECK_EQ(api.setParams.size(), 0u);
 }
 
 static void test_button_noop_and_unbound() {
@@ -707,7 +749,7 @@ static void test_state_reader_reads_all_fields() {
     CHECK(state.machine.running);
     CHECK(state.machine.paused);
     CHECK(state.machine.initialized);
-    CHECK(!state.estopBlocked);
+    CHECK(!state.machine.estop);
 }
 
 static void test_state_reader_estop_blocks() {
@@ -718,7 +760,6 @@ static void test_state_reader_estop_blocks() {
 
     CHECK(sr.read());
     CHECK(state.machine.estop);
-    CHECK(state.estopBlocked);
 }
 
 // ---------------------------------------------------------------------------
@@ -819,7 +860,9 @@ int main() {
     test_button_named_command();
     test_button_feed_override();
     test_button_gcode();
-    test_button_toggle_jog_mode();
+    test_button_step_size_cycles();
+    test_button_step_size_drives_jog_distance();
+    test_button_override_without_reading();
     test_button_noop_and_unbound();
     test_button_unknown_action();
 

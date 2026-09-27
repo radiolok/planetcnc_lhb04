@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 
 namespace mpgd {
@@ -34,7 +35,9 @@ public:
 
     // --- Parameters --------------------------------------------------------
     virtual bool setParam(const std::string& name, double value) = 0;
-    virtual double getParam(const std::string& name) = 0;
+    // std::nullopt when the value cannot be read (TNG not initialized, the
+    // export is missing, or the parameter is unknown).
+    virtual std::optional<double> getParam(const std::string& name) = 0;
 
     // --- G-code helpers ----------------------------------------------------
     virtual bool startCode(const std::string& gcode) = 0;

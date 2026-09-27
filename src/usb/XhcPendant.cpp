@@ -6,8 +6,9 @@
 namespace mpgd {
 
 XhcPendant::XhcPendant(SharedState& state, ButtonHandler& buttons,
-                       const PollingConfig& polling)
-    : state_(state), buttons_(buttons), polling_(polling) {}
+                       const PollingConfig& polling, bool verifyChecksum)
+    : state_(state), buttons_(buttons), polling_(polling),
+      verifyChecksum_(verifyChecksum) {}
 
 bool XhcPendant::process(const uint8_t* data, size_t len) {
     usb::ParsedInput p = usb::PacketParser::parseInput(data, len);
@@ -18,8 +19,10 @@ bool XhcPendant::process(const uint8_t* data, size_t len) {
     if (!p.checksumOk) {
         // The reference driver (xhc-hb04.cc) does not verify a checksum; this
         // is an optional defensive check enabled via config.
-        logDebug("pendant: checksum mismatch (got 0x%02X, expected 0x%02X)",
-                 p.checksumByte, p.expectedChecksum);
+        logDebug("pendant: checksum mismatch (got 0x%02X, expected 0x%02X)%s",
+                 p.checksumByte, p.expectedChecksum,
+                 verifyChecksum_ ? "; report dropped" : "");
+        if (verifyChecksum_) return false;
     }
 
     // Detect the "sleeping" state (all-zero fields, xhc-hb04.cc behaviour).
