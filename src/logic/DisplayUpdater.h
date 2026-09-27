@@ -22,8 +22,9 @@ public:
     DisplayUpdater(ITngApi& api, SharedState& state, const Config& cfg);
 
     // Builds one display frame into `out`. Returns false when the frame should
-    // not be sent (axis rotary OFF and polling.display_always is false).
-    bool build(Frame& out);
+    // not be sent (axis rotary OFF and polling.display_always is false),
+    // unless `force` is set.
+    bool build(Frame& out, bool force = false);
 
 private:
     ITngApi& api_;

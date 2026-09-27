@@ -12,12 +12,31 @@ namespace mpgd {
 
 namespace {
 
-constexpr const char* kKnownActions[] = {
-    "estop", "stop", "start", "pause", "pause_toggle", "toggle_start_pause",
-    "home_all", "set_work_zero", "set_work_zero_xy", "set_work_zero_z",
-    "spindle_toggle", "flood_toggle", "mist_toggle",
-    "feed_override", "spindle_override", "step_size",
-    "command", "gcode", "noop",
+struct ActionName {
+    const char* name;
+    ActionType type;
+};
+
+constexpr ActionName kActionNames[] = {
+    {"estop", ActionType::EStop},
+    {"stop", ActionType::Stop},
+    {"start", ActionType::Start},
+    {"pause", ActionType::Pause},
+    {"pause_toggle", ActionType::PauseToggle},
+    {"toggle_start_pause", ActionType::ToggleStartPause},
+    {"home_all", ActionType::HomeAll},
+    {"set_work_zero", ActionType::SetWorkZero},
+    {"set_work_zero_xy", ActionType::SetWorkZeroXY},
+    {"set_work_zero_z", ActionType::SetWorkZeroZ},
+    {"spindle_toggle", ActionType::SpindleToggle},
+    {"flood_toggle", ActionType::FloodToggle},
+    {"mist_toggle", ActionType::MistToggle},
+    {"feed_override", ActionType::FeedOverride},
+    {"spindle_override", ActionType::SpindleOverride},
+    {"step_size", ActionType::StepSize},
+    {"command", ActionType::Command},
+    {"gcode", ActionType::GCode},
+    {"noop", ActionType::Noop},
 };
 
 constexpr const char* kLogLevels[] = {
@@ -79,6 +98,7 @@ void applyJogging(const YAML::Node& n, JoggingConfig& c) {
     if (n["feed_override_param"]) c.feedOverrideParam = n["feed_override_param"].as<std::string>(c.feedOverrideParam);
     if (n["spindle_override_param"]) c.spindleOverrideParam = n["spindle_override_param"].as<std::string>(c.spindleOverrideParam);
     if (n["jog_speed"]) c.jogSpeed = n["jog_speed"].as<double>(c.jogSpeed);
+    if (n["max_decel"]) c.maxDecel = n["max_decel"].as<double>(c.maxDecel);
 }
 
 void applyButtons(const YAML::Node& n, Config& c) {
@@ -88,23 +108,40 @@ void applyButtons(const YAML::Node& n, Config& c) {
     for (const auto& entry : n) {
         std::string name = entry.first.as<std::string>();
         const YAML::Node& b = entry.second;
-        ButtonAction a;
-        if (b["action"]) a.action = b["action"].as<std::string>();
-        if (b["cmd"]) a.command = b["cmd"].as<std::string>();
-        else if (b["command"]) a.command = b["command"].as<std::string>();
-        if (b["delta"]) a.delta = b["delta"].as<double>();
-        c.buttons.emplace_back(std::move(name), std::move(a));
+        std::string action;
+        std::string command;
+        double delta = 0.0;
+        if (b["action"]) action = b["action"].as<std::string>();
+        if (b["cmd"]) command = b["cmd"].as<std::string>();
+        else if (b["command"]) command = b["command"].as<std::string>();
+        if (b["delta"]) delta = b["delta"].as<double>();
+        c.buttons.emplace_back(std::move(name),
+                               makeButtonAction(action, command, delta));
     }
 }
 
 } // namespace
 
+ActionType parseActionType(const std::string& name) {
+    for (const auto& a : kActionNames) {
+        if (name == a.name) return a.type;
+    }
+    return ActionType::Unknown;
+}
+
+ButtonAction makeButtonAction(const std::string& name,
+                              const std::string& command, double delta) {
+    ButtonAction a;
+    a.type = parseActionType(name);
+    a.name = name;
+    a.command = command;
+    a.delta = delta;
+    return a;
+}
+
 std::vector<std::pair<std::string, ButtonAction>> Config::defaultButtons() {
     auto bind = [](const char* action, const char* cmd = "") {
-        ButtonAction a;
-        a.action = action;
-        a.command = cmd;
-        return a;
+        return makeButtonAction(action, cmd);
     };
     // Keep in sync with config/mpgd.yaml.
     return {
@@ -120,10 +157,7 @@ std::vector<std::pair<std::string, ButtonAction>> Config::defaultButtons() {
 }
 
 bool ConfigManager::isKnownAction(const std::string& action) {
-    for (const char* a : kKnownActions) {
-        if (action == a) return true;
-    }
-    return false;
+    return parseActionType(action) != ActionType::Unknown;
 }
 
 bool ConfigManager::validate(const Config& cfg, std::string& error) {
@@ -146,6 +180,7 @@ bool ConfigManager::validate(const Config& cfg, std::string& error) {
     }
     if (!(j.maxSpeed > 0.0)) bad("jogging.max_speed must be > 0");
     if (!(j.jogSpeed > 0.0)) bad("jogging.jog_speed must be > 0");
+    if (!(j.maxDecel > 0.0)) bad("jogging.max_decel must be > 0");
     if (!(j.overrideStep > 0.0)) bad("jogging.override_step must be > 0");
     if (j.feedOverrideParam.empty()) bad("jogging.feed_override_param is empty");
     if (j.spindleOverrideParam.empty()) bad("jogging.spindle_override_param is empty");
@@ -167,11 +202,12 @@ bool ConfigManager::validate(const Config& cfg, std::string& error) {
 
     for (const auto& [name, a] : cfg.buttons) {
         if (!isKnownButton(name)) bad("buttons: unknown button '" + name + "'");
-        if (!isKnownAction(a.action)) {
-            bad("buttons." + name + ": unknown action '" + a.action + "'");
-        } else if ((a.action == "command" || a.action == "gcode") &&
+        if (a.type == ActionType::Unknown) {
+            bad("buttons." + name + ": unknown action '" + a.name + "'");
+        } else if ((a.type == ActionType::Command ||
+                    a.type == ActionType::GCode) &&
                    a.command.empty()) {
-            bad("buttons." + name + ": action '" + a.action + "' needs `cmd`");
+            bad("buttons." + name + ": action '" + a.name + "' needs `cmd`");
         }
     }
 

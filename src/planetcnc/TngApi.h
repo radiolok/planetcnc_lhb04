@@ -60,9 +60,7 @@ public:
     bool start() override;
 
     // --- Generic commands --------------------------------------------------
-    int getCmdCount();
     int getCmdId(const std::string& name) override;
-    bool isCmdEnabled(int id);
     bool cmdExec(int id) override;
     bool cmdExecStr(int id, const std::string& str);
     bool cmdExecVal(int id, double val);
@@ -82,6 +80,7 @@ public:
     bool infoWorkPosition3(double& x, double& y, double& z) override;
     bool infoMotorPosition3(double& x, double& y, double& z) override;
     double infoMotorPosition(int axis) override;
+    double infoWorkPosition(int axis) override;
 
     // --- Jog / move --------------------------------------------------------
     bool jog(bool step, double x, double y, double z) override;
@@ -137,6 +136,7 @@ private:
     tng::Fn_InfoPos3        fnInfoWorkPosition3_ = nullptr;
     tng::Fn_InfoPos3        fnInfoMotorPosition3_ = nullptr;
     tng::Fn_InfoPosAxis     fnInfoMotorPosition_ = nullptr;
+    tng::Fn_InfoPosAxis     fnInfoWorkPosition_ = nullptr;
     tng::Fn_Jog             fnJog_ = nullptr;
     tng::Fn_Jog9            fnJog9_ = nullptr;
     tng::Fn_JogStop         fnJogStop_ = nullptr;

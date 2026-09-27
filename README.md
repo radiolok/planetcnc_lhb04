@@ -204,6 +204,7 @@ jogging:
   override_step: 10.0                   # % на клик маховика
   feed_override_param: "_ovrd_speedfeed"
   spindle_override_param: "_ovrd_spindle"
+  max_decel: 200.0                      # мм/с² торможение сервопривода (<= _motion_maxdec)
 
 polling:
   usb_hz: 100

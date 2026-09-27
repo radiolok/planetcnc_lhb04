@@ -11,8 +11,6 @@
 namespace mpgd {
 
 namespace {
-constexpr double kOverrideMin = 0.0;
-constexpr double kOverrideMax = 2.5;
 // Velocity servo parameters.
 //
 // PlanetCNC Jog() treats the velocity argument as a MULTIPLIER of the jog
@@ -21,7 +19,6 @@ constexpr double kOverrideMax = 2.5;
 // 60 mm/s with _jog_speed = 12). The servo works in mm/s and divides by
 // cfg_.jogSpeed when issuing Jog().
 constexpr double kServoGain = 5.0;          // 1/s: vel = error * gain
-constexpr double kServoMaxDecel = 200.0;    // mm/s^2 (== _motion_maxdec)
 constexpr double kServoStopDeadbandMm = 0.05;
 constexpr double kServoStartDeadbandMm = 0.15;
 // Minimum change in commanded velocity that warrants re-issuing Jog().
@@ -184,8 +181,9 @@ void JogController::runServo(int axis, bool freshCounts) {
     const double maxVel = std::max(1.0, cfg_.maxSpeed / 60.0);
     // Velocity limited by the braking distance so the axis can decelerate to
     // zero within the remaining error (no overshoot -> no limit cycle).
+    // The braking deceleration is jogging.max_decel (<= _motion_maxdec).
     double vel = std::min(kServoGain * absErr,
-                          std::sqrt(2.0 * kServoMaxDecel * absErr));
+                          std::sqrt(2.0 * cfg_.maxDecel * absErr));
     vel = std::min(vel, maxVel);
     vel = std::copysign(vel, error);
 

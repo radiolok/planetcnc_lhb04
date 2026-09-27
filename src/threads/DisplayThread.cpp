@@ -22,16 +22,16 @@ void DisplayThread::run() {
     PeriodicTimer timer{std::chrono::milliseconds(periodMs_)};
     while (!state_.shutdown.load()) {
         bool isOpen = device_.isOpen();
-        if (isOpen && !wasOpen) {
-            // FR-01.3: initial "hello" frame on (re)connect.
-            logInfo("display: sending hello frame");
-        }
+        // FR-01.3: on (re)connect send one frame even with the axis rotary
+        // OFF, so the LCD shows current values instead of stale ones.
+        const bool hello = isOpen && !wasOpen;
         // Refresh machine state (positions, e-stop, idle) whether or not the
         // pendant is connected: the jog thread relies on it being current.
         stateReader_.read();
         if (isOpen) {
             DisplayUpdater::Frame frame{};
-            if (updater_.build(frame)) {
+            if (updater_.build(frame, hello)) {
+                if (hello) logInfo("display: sending initial frame");
                 for (const auto& report : frame) {
                     int r = device_.sendFeatureReport(report.data(), report.size());
                     if (r < 0) {
