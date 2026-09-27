@@ -144,6 +144,7 @@ bool TngApi::load(const std::string& libPath, std::string& error) {
     resolve("InfoWorkPosition3", fnInfoWorkPosition3_, true, error);
     resolve("InfoMotorPosition3", fnInfoMotorPosition3_, true, error);
     resolve("InfoMotorPosition", fnInfoMotorPosition_, false, error);
+    resolve("InfoWorkPosition", fnInfoWorkPosition_, false, error);
 
     resolve("Jog", fnJog_, true, error);
     resolve("Jog9", fnJog9_, false, error);
@@ -194,7 +195,7 @@ void TngApi::unload() {
     fnStartCode_ = nullptr; fnOpenCode_ = nullptr;
     fnInfoSpeed_ = nullptr; fnInfoSpindle_ = nullptr; fnInfoJogPot_ = nullptr;
     fnInfoWorkPosition3_ = nullptr; fnInfoMotorPosition3_ = nullptr;
-    fnInfoMotorPosition_ = nullptr;
+    fnInfoMotorPosition_ = nullptr; fnInfoWorkPosition_ = nullptr;
     fnJog_ = nullptr; fnJog9_ = nullptr; fnJogStop_ = nullptr; fnMoveAxis_ = nullptr;
     fnSetInitialiseCB_ = nullptr; fnSetRefreshCB_ = nullptr;
     fnSetIdleCB_ = nullptr; fnSetLineNumCB_ = nullptr;
@@ -319,17 +320,10 @@ bool TngApi::start() {
 }
 
 // --- Generic commands ------------------------------------------------------
-int TngApi::getCmdCount() {
-    return 0; // GetCmdCount intentionally not bound in v1
-}
 int TngApi::getCmdId(const std::string& name) {
     if (!fnGetCmdId_) return -1;
     std::lock_guard<std::mutex> lk(mtx_);
     return fnGetCmdId_(name.c_str());
-}
-bool TngApi::isCmdEnabled(int id) {
-    (void)id;
-    return true; // IsCmdEnabled not bound in v1
 }
 bool TngApi::cmdExec(int id) {
     if (!fnCmdExec_) return false;
@@ -409,6 +403,17 @@ double TngApi::infoMotorPosition(int axis) {
     if (axis < 3 && fnInfoMotorPosition3_) {
         double x, y, z;
         if (fnInfoMotorPosition3_(&x, &y, &z)) {
+            return axis == 0 ? x : (axis == 1 ? y : z);
+        }
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+double TngApi::infoWorkPosition(int axis) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    if (fnInfoWorkPosition_) return fnInfoWorkPosition_(axis);
+    if (axis < 3 && fnInfoWorkPosition3_) {
+        double x, y, z;
+        if (fnInfoWorkPosition3_(&x, &y, &z)) {
             return axis == 0 ? x : (axis == 1 ? y : z);
         }
     }

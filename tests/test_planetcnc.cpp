@@ -44,6 +44,7 @@ public:
     bool motorPosOk = true;
     double motorX = 0.0, motorY = 0.0, motorZ = 0.0;
     double motorA = 0.0, motorB = 0.0, motorC = 0.0;
+    double workA = 0.0;
 
     std::map<std::string, double> params;
 
@@ -129,6 +130,16 @@ public:
         }
     }
 
+    double infoWorkPosition(int axis) override {
+        switch (axis) {
+            case 0: return workX;
+            case 1: return workY;
+            case 2: return workZ;
+            case 3: return workA;
+            default: return std::numeric_limits<double>::quiet_NaN();
+        }
+    }
+
     bool jog(bool step, double x, double y, double z) override {
         jogs.push_back({step, x, y, z});
         return jogResult;
@@ -154,9 +165,7 @@ Config makeConfig() {
 }
 
 void addButton(Config& cfg, const std::string& name, const std::string& action) {
-    ButtonAction a;
-    a.action = action;
-    cfg.buttons.emplace_back(name, a);
+    cfg.buttons.emplace_back(name, makeButtonAction(action));
 }
 
 // ---------------------------------------------------------------------------
@@ -642,10 +651,8 @@ static void test_button_named_command() {
 
 static void test_button_feed_override() {
     MockTngApi api; SharedState state; Config cfg = makeConfig();
-    ButtonAction a;
-    a.action = "feed_override";
-    a.delta = 20.0;
-    cfg.buttons.emplace_back("macro_1", a);
+    cfg.buttons.emplace_back("macro_1",
+                             makeButtonAction("feed_override", "", 20.0));
     api.params["_ovrd_speedfeed"] = 1.0;
     ButtonHandler bh(api, state, cfg);
 
@@ -655,10 +662,7 @@ static void test_button_feed_override() {
 
 static void test_button_gcode() {
     MockTngApi api; SharedState state; Config cfg = makeConfig();
-    ButtonAction a;
-    a.action = "gcode";
-    a.command = "G0 X10";
-    cfg.buttons.emplace_back("macro_2", a);
+    cfg.buttons.emplace_back("macro_2", makeButtonAction("gcode", "G0 X10"));
     ButtonHandler bh(api, state, cfg);
 
     CHECK(bh.onPress("macro_2"));
@@ -706,10 +710,8 @@ static void test_button_step_size_drives_jog_distance() {
 
 static void test_button_override_without_reading() {
     MockTngApi api; SharedState state; Config cfg = makeConfig();
-    ButtonAction a;
-    a.action = "feed_override";
-    a.delta = 20.0;
-    cfg.buttons.emplace_back("macro_1", a);
+    cfg.buttons.emplace_back("macro_1",
+                             makeButtonAction("feed_override", "", 20.0));
     // `_ovrd_speedfeed` is not readable (e.g. TNG not initialized yet).
     ButtonHandler bh(api, state, cfg);
 
@@ -751,6 +753,7 @@ static void test_state_reader_reads_all_fields() {
     MockTngApi api;
     api.workX = 1.0; api.workY = 2.0; api.workZ = 3.0;
     api.motorX = 4.0; api.motorY = 5.0; api.motorZ = 6.0;
+    api.workA = 7.0; api.motorA = 8.0;
     api.speed = 10.0;
     api.spindle = 200.0;
     api.jogPot = 0x12;
@@ -767,6 +770,8 @@ static void test_state_reader_reads_all_fields() {
     CHECK_NEAR(state.machine.workZ, 3.0, 1e-9);
     CHECK_NEAR(state.machine.motorX, 4.0, 1e-9);
     CHECK_NEAR(state.machine.motorZ, 6.0, 1e-9);
+    CHECK_NEAR(state.machine.workA, 7.0, 1e-9);
+    CHECK_NEAR(state.machine.motorA, 8.0, 1e-9);
     CHECK_NEAR(state.machine.feed, 10.0, 1e-9);
     CHECK_NEAR(state.machine.spindle, 200.0, 1e-9);
     CHECK_EQ(state.machine.jogPot, 0x12u);
@@ -818,12 +823,40 @@ static void test_display_always_sends_when_axis_off() {
     CHECK(du.build(f));
 }
 
+static void test_display_forced_frame_when_axis_off() {
+    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    state.pendant.axisCode = xhc::kAxisOff;
+    DisplayUpdater du(api, state, cfg);
+    DisplayUpdater::Frame f;
+    CHECK(du.build(f, /*force=*/true));
+}
+
+static void test_display_a_axis() {
+    MockTngApi api; SharedState state; Config cfg = makeConfig();
+    state.pendant.axisCode = xhc::kAxisA;
+    state.machine.workX = 1.0;
+    state.machine.workA = 45.5;
+    state.machine.motorA = 90.25;
+    DisplayUpdater du(api, state, cfg);
+    DisplayUpdater::Frame f;
+    CHECK(du.build(f));
+    // Line 1 shows work A, not X.
+    CHECK_EQ(readLE16At(f, 3), 45);
+    CHECK_EQ(readLE16At(f, 5), 5000);
+
+    // Without a work position the machine position is shown instead.
+    state.machine.workA = std::numeric_limits<double>::quiet_NaN();
+    CHECK(du.build(f));
+    CHECK_EQ(readLE16At(f, 3), 90);
+    CHECK_EQ(readLE16At(f, 5), 2500);
+}
+
 static void test_display_frame_encoding() {
     MockTngApi api; SharedState state; Config cfg = makeConfig();
     api.params["_ovrd_speedfeed"] = 1.0;
     api.params["_ovrd_spindle"] = 0.5;
-    api.speed = 50.0;
-    api.spindle = 200.0;
+    state.machine.feed = 50.0;
+    state.machine.spindle = 200.0;
     state.pendant.axisCode = xhc::kAxisX;
     state.stepSize = 0.01;
     state.machine.workX = 12.345;
@@ -898,6 +931,8 @@ int main() {
     test_state_reader_estop_blocks();
 
     test_display_skip_when_axis_off();
+    test_display_forced_frame_when_axis_off();
+    test_display_a_axis();
     test_display_always_sends_when_axis_off();
     test_display_frame_encoding();
 
