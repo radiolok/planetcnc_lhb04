@@ -72,24 +72,21 @@ void JogController::stopNow() {
 void JogController::tick() {
     const int counts = drainCounts();
 
-    bool jogEnabled;
-    bool estop;
-    bool running;
-    bool paused;
-    bool idle;
-    int axis;
-    bool feedSel;
-    bool spindleSel;
-    {
-        std::lock_guard<std::mutex> lk(state_.mutex);
-        jogEnabled = state_.jogEnabled;
-        estop = state_.machine.estop;
-        running = state_.machine.running;
-        paused = state_.machine.paused;
-        idle = state_.machine.idle;
-        axis = state_.selectedAxis();
-        feedSel = state_.feedOverrideSelected();
-        spindleSel = state_.spindleOverrideSelected();
+    const StateSnapshot snap = state_.snapshot();
+    const bool jogEnabled = snap.jogEnabled;
+    bool estop = snap.machine.estop;
+    const bool running = snap.machine.running;
+    const bool paused = snap.machine.paused;
+    const bool idle = snap.machine.idle;
+    const int axis = snap.selectedAxis();
+    const bool feedSel = snap.feedOverrideSelected();
+    const bool spindleSel = snap.spindleOverrideSelected();
+
+    // The shared e-stop flag is refreshed at the state-reader rate only.
+    // Before issuing or continuing motion, ask the controller directly so
+    // an e-stop is never acted on late.
+    if (!estop && jogEnabled && axis >= 0 && (servoActive_ || counts != 0)) {
+        estop = api_.isEStop();
     }
 
     if (estop || !jogEnabled) {
@@ -120,7 +117,7 @@ void JogController::tick() {
             resetTargets();
             return;
         }
-        if (counts != 0) updateTarget(axis, counts);
+        if (counts != 0) updateTarget(axis, counts, snap.stepSize);
         runServo(axis, counts != 0);
     } else {
         if (feedSel && counts != 0) {
@@ -131,14 +128,9 @@ void JogController::tick() {
     }
 }
 
-void JogController::updateTarget(int axis, int counts) {
+void JogController::updateTarget(int axis, int counts, double stepSize) {
     if (axis < 0 || axis >= 6) return;
 
-    double stepSize;
-    {
-        std::lock_guard<std::mutex> lk(state_.mutex);
-        stepSize = state_.stepSize;
-    }
     if (stepSize <= 0.0) stepSize = 0.001;
 
     if (!std::isfinite(target_[axis])) {

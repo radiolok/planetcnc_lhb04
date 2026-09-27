@@ -11,7 +11,7 @@ namespace usb {
 class HidDevice;
 }
 
-// Periodic LCD refresh thread (20 Hz cadence).
+// Periodic machine-state refresh and LCD update thread (polling.display_hz).
 class DisplayThread {
 public:
     DisplayThread(SharedState& state, usb::HidDevice& device,

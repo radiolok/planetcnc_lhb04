@@ -67,6 +67,7 @@ void test_invalid_values_all_reported() {
         "polling:\n"
         "  usb_hz: 2000\n"
         "  display_hz: 0\n"
+        "  jog_hz: 5000\n"
         "jogging:\n"
         "  jog_speed: -1\n"
         "  max_speed: 0\n"
@@ -82,6 +83,7 @@ void test_invalid_values_all_reported() {
     CHECK(!ConfigManager::load(path, cfg, err));
     CHECK(contains(err, "usb_hz"));
     CHECK(contains(err, "display_hz"));
+    CHECK(contains(err, "jog_hz"));
     CHECK(contains(err, "jog_speed"));
     CHECK(contains(err, "max_speed"));
     CHECK(contains(err, "step_sizes"));

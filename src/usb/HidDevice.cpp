@@ -1,5 +1,7 @@
 #include "usb/HidDevice.h"
 
+#include "utils/Utf8.h"
+
 #include <hidapi.h>
 
 #include <cwchar>
@@ -8,17 +10,6 @@
 #include <utility>
 
 namespace mpgd::usb {
-
-namespace {
-
-std::string narrow(const wchar_t* w) {
-    std::string out;
-    if (!w) return out;
-    for (; *w; ++w) out.push_back(static_cast<char>(*w));
-    return out;
-}
-
-} // namespace
 
 HidDevice::~HidDevice() {
     close();
@@ -55,10 +46,10 @@ bool HidDevice::open(uint16_t vendorId, const std::vector<uint16_t>& productIds,
             device_ = dev;
             wchar_t buf[256] = {0};
             if (hid_get_manufacturer_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
-                manufacturer_ = narrow(buf);
+                manufacturer_ = utf8FromWide(buf);
             }
             if (hid_get_product_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
-                product_ = narrow(buf);
+                product_ = utf8FromWide(buf);
             }
             return true;
         }
@@ -76,10 +67,10 @@ bool HidDevice::openPath(const std::string& path) {
     device_ = dev;
     wchar_t buf[256] = {0};
     if (hid_get_manufacturer_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
-        manufacturer_ = narrow(buf);
+        manufacturer_ = utf8FromWide(buf);
     }
     if (hid_get_product_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
-        product_ = narrow(buf);
+        product_ = utf8FromWide(buf);
     }
     return true;
 }
@@ -102,8 +93,8 @@ std::vector<HidDeviceInfo> enumerateDevices(uint16_t vendorId,
         info.path = d->path ? d->path : "";
         info.vendorId = d->vendor_id;
         info.productId = d->product_id;
-        info.manufacturer = narrow(d->manufacturer_string);
-        info.product = narrow(d->product_string);
+        info.manufacturer = utf8FromWide(d->manufacturer_string);
+        info.product = utf8FromWide(d->product_string);
         info.interfaceNumber = d->interface_number;
         out.push_back(info);
     }
@@ -210,7 +201,7 @@ std::string HidDevice::lastError() const {
     std::lock_guard<std::mutex> lk(mtx_);
     if (!device_) return std::string();
     const wchar_t* e = hid_error(device_);
-    return e ? narrow(e) : std::string();
+    return e ? utf8FromWide(e) : std::string();
 }
 
 int HidDevice::getFeatureReportLength(uint8_t reportId) {

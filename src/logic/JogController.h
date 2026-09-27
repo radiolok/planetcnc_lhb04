@@ -30,7 +30,7 @@ public:
 
 private:
     int drainCounts();
-    void updateTarget(int axis, int counts);
+    void updateTarget(int axis, int counts, double stepSize);
     void runServo(int axis, bool freshCounts);
     void stopServo();
     void resetTargets();
