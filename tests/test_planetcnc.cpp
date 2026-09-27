@@ -495,6 +495,32 @@ static void test_servo_blocked_by_estop() {
     CHECK_EQ(api.moveAxes.size(), 0u);
 }
 
+// The shared e-stop flag may be stale (it is refreshed at the display rate,
+// review item 16): the jog tick asks the controller directly before moving.
+static void test_servo_checks_live_estop() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    api.estop = true;                  // shared state still says no e-stop
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 0u);
+
+    api.estop = false;
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    api.estop = true;                  // e-stop while the servo is running
+    jc.tick();
+    CHECK_EQ(api.jogStops, 1);
+}
+
 static void test_servo_disabled_in_attach_mode() {
     MockTngApi api;
     SharedState state;
@@ -843,6 +869,7 @@ int main() {
     test_servo_hysteresis();
     test_servo_no_reissue_similar_velocity();
     test_servo_blocked_by_estop();
+    test_servo_checks_live_estop();
     test_servo_disabled_in_attach_mode();
     test_servo_no_drive_back_after_external_move();
     test_servo_target_reset_by_external_motion();

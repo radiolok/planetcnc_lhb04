@@ -13,15 +13,10 @@ DisplayUpdater::DisplayUpdater(ITngApi& api, SharedState& state,
     : api_(api), state_(state), cfg_(cfg) {}
 
 bool DisplayUpdater::build(Frame& out) {
-    bool axisOff;
-    int axis;
-    double stepSize;
-    {
-        std::lock_guard<std::mutex> lk(state_.mutex);
-        axisOff = state_.axisOff();
-        axis = state_.selectedAxis();
-        stepSize = state_.stepSize;
-    }
+    const StateSnapshot snap = state_.snapshot();
+    const bool axisOff = snap.axisOff();
+    const int axis = snap.selectedAxis();
+    const double stepSize = snap.stepSize;
 
     // FR-04.5: skip display updates while the axis rotary is OFF (unless the
     // operator explicitly wants continuous display traffic).
@@ -29,17 +24,14 @@ bool DisplayUpdater::build(Frame& out) {
         return false;
     }
 
-    // Read positions under lock so the three coordinates are consistent.
-    double wx, wy, wz, mx, my, mz;
-    {
-        std::lock_guard<std::mutex> lk(state_.mutex);
-        wx = state_.machine.workX;
-        wy = state_.machine.workY;
-        wz = state_.machine.workZ;
-        mx = state_.machine.motorX;
-        my = state_.machine.motorY;
-        mz = state_.machine.motorZ;
-    }
+    // Positions come from the same snapshot, so the three coordinates are
+    // consistent.
+    const double wx = snap.machine.workX;
+    const double wy = snap.machine.workY;
+    const double wz = snap.machine.workZ;
+    const double mx = snap.machine.motorX;
+    const double my = snap.machine.motorY;
+    const double mz = snap.machine.motorZ;
 
     usb::DisplayData d;
     // Line 1 shows the selected axis (X or A), matching xhc-hb04.cc.

@@ -71,7 +71,11 @@ void UsbPollThread::run() {
         if (r >= static_cast<int>(xhc::kInputPacketSizeMin)) {
             if (sniff_) hexdump(buf, static_cast<size_t>(r));
             pendant_.process(buf, static_cast<size_t>(r));
-        } else if (r < 0) {
+        } else if (r >= 0) {
+            // Timeout or short report: let a debounced button change that is
+            // due be committed even though no new report arrived.
+            pendant_.tick();
+        } else {
             logWarn("pendant read error (%d), reconnecting", r);
             readDevice_.close();
             writeDevice_.close();
@@ -82,7 +86,6 @@ void UsbPollThread::run() {
             state_.pendant.jogCounts.store(0);
             std::this_thread::sleep_for(std::chrono::milliseconds(reconnectMs));
         }
-        // r == 0: read timeout, no data — loop again.
     }
 
     readDevice_.close();

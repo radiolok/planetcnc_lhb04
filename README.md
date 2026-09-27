@@ -208,6 +208,7 @@ jogging:
 polling:
   usb_hz: 100
   display_hz: 20
+  jog_hz: 100                 # частота такта сервопривода маховика
   reconnect_ms: 2000
   button_debounce_ms: 50
   display_always: false       # слать LCD и при ручке OFF

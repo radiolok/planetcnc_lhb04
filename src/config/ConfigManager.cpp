@@ -42,6 +42,7 @@ void applyPolling(const YAML::Node& n, PollingConfig& c) {
     if (!n) return;
     if (n["usb_hz"]) c.usbHz = n["usb_hz"].as<int>(c.usbHz);
     if (n["display_hz"]) c.displayHz = n["display_hz"].as<int>(c.displayHz);
+    if (n["jog_hz"]) c.jogHz = n["jog_hz"].as<int>(c.jogHz);
     if (n["reconnect_ms"]) c.reconnectMs = n["reconnect_ms"].as<int>(c.reconnectMs);
     if (n["button_debounce_ms"]) c.buttonDebounceMs = n["button_debounce_ms"].as<int>(c.buttonDebounceMs);
     if (n["display_always"]) c.displayAlways = n["display_always"].as<bool>(c.displayAlways);
@@ -154,6 +155,7 @@ bool ConfigManager::validate(const Config& cfg, std::string& error) {
     const auto& p = cfg.polling;
     if (p.usbHz < 1 || p.usbHz > 1000) bad("polling.usb_hz must be 1..1000");
     if (p.displayHz < 1 || p.displayHz > 1000) bad("polling.display_hz must be 1..1000");
+    if (p.jogHz < 1 || p.jogHz > 1000) bad("polling.jog_hz must be 1..1000");
     if (p.reconnectMs <= 0) bad("polling.reconnect_ms must be > 0");
     if (p.buttonDebounceMs < 0) bad("polling.button_debounce_ms must be >= 0");
 

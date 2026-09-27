@@ -31,6 +31,7 @@ jogging:
 polling:
   usb_hz: 100          # USB input poll rate
   display_hz: 20       # LCD refresh rate
+  jog_hz: 100          # jog servo tick rate
   reconnect_ms: 2000   # USB reconnect interval
   button_debounce_ms: 50
   display_always: false  # keep sending LCD data when axis rotary = OFF

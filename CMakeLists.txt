@@ -125,6 +125,14 @@ add_executable(test_planetcnc tests/test_planetcnc.cpp)
 target_link_libraries(test_planetcnc PRIVATE mpgd::core)
 add_test(NAME test_planetcnc COMMAND test_planetcnc)
 
+add_executable(test_xhc_pendant tests/test_xhc_pendant.cpp)
+target_link_libraries(test_xhc_pendant PRIVATE mpgd::core)
+add_test(NAME test_xhc_pendant COMMAND test_xhc_pendant)
+
+add_executable(test_utf8 tests/test_utf8.cpp)
+target_link_libraries(test_utf8 PRIVATE mpgd::core)
+add_test(NAME test_utf8 COMMAND test_utf8)
+
 # ---------------------------------------------------------------------------
 # GUI test tool (Dear ImGui + Win32 + OpenGL3)
 # ---------------------------------------------------------------------------
