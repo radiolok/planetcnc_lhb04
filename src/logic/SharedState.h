@@ -20,7 +20,8 @@ struct MachineState {
     bool controllerReady = false;
     bool idle = true;
     bool estop = false;
-    bool running = false;    // controller executing
+    bool running = false;    // controller executing a program
+    bool paused = false;     // program paused
     bool initialized = false;
 };
 
