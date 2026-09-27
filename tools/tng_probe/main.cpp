@@ -175,8 +175,12 @@ void printParams(mpgd::TngApi& api, const std::vector<std::string>& names) {
         for (const auto& n : names) list.emplace_back(n.c_str(), "");
     }
     for (const auto& [name, note] : list) {
-        double v = api.getParam(name);
-        std::printf("  %-22s = %-12.4f   %s\n", name, v, note);
+        const std::optional<double> v = api.getParam(name);
+        if (v) {
+            std::printf("  %-22s = %-12.4f   %s\n", name, *v, note);
+        } else {
+            std::printf("  %-22s = %-12s   %s\n", name, "n/a", note);
+        }
     }
 }
 
@@ -432,7 +436,8 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    mpgd::Logger::init("info", "");
+    std::string logError;
+    mpgd::Logger::init("info", "", logError);
     std::setvbuf(stdout, nullptr, _IONBF, 0);
 
     mpgd::TngApi api;

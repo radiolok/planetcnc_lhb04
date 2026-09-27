@@ -190,8 +190,7 @@ build\Release\tng_probe.exe --lib "C:\Program Files\PlanetCNC\PlanetCNCLib64.dll
 device:
   vendor_id: 0x10CE
   product_ids: [0xEB70, 0xEB71, 0xEB93]
-  auto_detect: true
-  verify_checksum: false      # эталонный драйвер чексумму не проверяет
+  verify_checksum: false      # true = отбрасывать 8-байтные отчёты с неверной чексуммой
 
 planetcnc:
   profile: ""                 # "" = профиль по умолчанию
@@ -199,9 +198,9 @@ planetcnc:
   attach: false
 
 jogging:
-  step_sizes: [0.001, 0.01, 0.1, 1.0]   # мм
+  step_sizes: [0.001, 0.01, 0.1, 1.0]   # мм на клик; кнопка `step_size` переключает по кругу
+  default_step_index: 1                 # шаг при запуске (индекс в step_sizes)
   max_speed: 1000.0                     # мм/мин (скорость позиционного следования)
-  mode: "step"                          # step | continuous (колесо игнорирует)
   override_step: 10.0                   # % на клик маховика
   feed_override_param: "_ovrd_speedfeed"
   spindle_override_param: "_ovrd_spindle"
@@ -249,9 +248,16 @@ buttons:
 `estop`, `stop`, `start`, `pause`, `pause_toggle`, `toggle_start_pause`,
 `home_all`, `set_work_zero`, `set_work_zero_xy`, `set_work_zero_z`,
 `spindle_toggle`, `flood_toggle`, `mist_toggle`, `feed_override`
-(`delta` в %), `spindle_override` (`delta` в %), `toggle_jog_mode`,
-`command` (именованная команда TNG в `cmd`, напр. `Machine.Home`),
-`gcode` (строка G-code в `cmd`), `noop`.
+(`delta` в %), `spindle_override` (`delta` в %), `step_size` (следующий
+шаг из `step_sizes`), `command` (именованная команда TNG в `cmd`, напр.
+`Machine.Home`), `gcode` (строка G-code в `cmd`), `noop`.
+
+Конфиг проверяется при запуске: ошибка разбора, неизвестная кнопка или
+действие, недопустимое значение (например, `usb_hz` вне 1..1000 или шаг ≤ 0)
+останавливают mpgd со списком всех проблем. Если файла нет, используются
+встроенные значения по умолчанию, включая привязки кнопок из
+`config/mpgd.yaml`. Секция `buttons` в файле полностью заменяет встроенные
+привязки.
 
 ---
 

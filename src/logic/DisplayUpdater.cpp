@@ -56,8 +56,8 @@ bool DisplayUpdater::build(Frame& out) {
     d.machine2 = my;
     d.machine3 = mz;
 
-    d.feedOverride = api_.getParam(cfg_.jogging.feedOverrideParam);
-    d.spindleOverride = api_.getParam(cfg_.jogging.spindleOverrideParam);
+    d.feedOverride = api_.getParam(cfg_.jogging.feedOverrideParam).value_or(0.0);
+    d.spindleOverride = api_.getParam(cfg_.jogging.spindleOverrideParam).value_or(0.0);
     d.feedValue = api_.infoSpeed();
     d.spindleRps = api_.infoSpindle();
     d.stepsize = static_cast<int>(llround(stepSize * 1000.0));

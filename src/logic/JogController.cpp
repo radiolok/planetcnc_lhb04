@@ -237,9 +237,15 @@ void JogController::runServo(int axis, bool freshCounts) {
 void JogController::processOverride(bool spindle, int counts) {
     const std::string& param = spindle ? cfg_.spindleOverrideParam
                                        : cfg_.feedOverrideParam;
-    double current = api_.getParam(param);
+    const std::optional<double> current = api_.getParam(param);
+    if (!current) {
+        // Never compute an override from a value that was not read.
+        logWarn("override: GetParam(%s) failed; wheel input ignored",
+                param.c_str());
+        return;
+    }
     double delta = counts * (cfg_.overrideStep / 100.0);
-    double value = std::clamp(current + delta, kOverrideMin, kOverrideMax);
+    double value = std::clamp(*current + delta, kOverrideMin, kOverrideMax);
     if (api_.setParam(param, value)) {
         logDebug("override: %s %+.2f%% -> %.1f%%", param.c_str(),
                  delta * 100.0, value * 100.0);
