@@ -104,6 +104,51 @@ static void test_state_published() {
     CHECK_EQ(f.state.pendant.jogCounts.load(), 3);
 }
 
+// All-zero fields mean the pendant is asleep; any activity wakes it.
+static void test_sleeping_state() {
+    Fixture f;
+    Report asleep(0, 0, 0);
+    CHECK(f.pendant.process(asleep.b, sizeof(asleep.b), f.t0));
+    CHECK(f.state.snapshot().pendantSleeping);
+    CHECK(f.state.snapshot().pendantConnected);
+
+    Report awake(0, xhc::kAxisX, 0);
+    CHECK(f.pendant.process(awake.b, sizeof(awake.b), f.t0 + 10ms));
+    CHECK(!f.state.snapshot().pendantSleeping);
+}
+
+// Wheel deltas add up in both directions until the jog thread takes them.
+static void test_jog_counts_accumulate() {
+    Fixture f;
+    const int8_t deltas[] = {1, 5, -2, 127, -128, 0};
+    int expected = 0;
+    auto at = 0ms;
+    for (int8_t d : deltas) {
+        Report r(0, xhc::kAxisZ, d);
+        f.pendant.process(r.b, sizeof(r.b), f.t0 + at);
+        expected += d;
+        at += 10ms;
+    }
+    CHECK_EQ(f.state.pendant.jogCounts.load(), expected);
+
+    // The jog thread drains with exchange(0); new counts start from zero.
+    CHECK_EQ(f.state.pendant.jogCounts.exchange(0), expected);
+    Report r(0, xhc::kAxisZ, -3);
+    f.pendant.process(r.b, sizeof(r.b), f.t0 + at);
+    CHECK_EQ(f.state.pendant.jogCounts.load(), -3);
+}
+
+// A report with a bad checksum is dropped when verification is on: no counts,
+// no button press.
+static void test_bad_checksum_dropped() {
+    Fixture f;
+    Report r(kHome, xhc::kAxisX, 4);
+    r.b[xhc::kOffsetChecksum] ^= 0xFF;
+    CHECK(!f.pendant.process(r.b, sizeof(r.b), f.t0));
+    CHECK_EQ(f.state.pendant.jogCounts.load(), 0);
+    CHECK_EQ(f.pop(), std::string("<empty>"));
+}
+
 int main() {
     test_press_is_queued();
     test_bounce_suppressed();
@@ -111,5 +156,8 @@ int main() {
     test_held_button_single_press();
     test_queue_bounded();
     test_state_published();
+    test_sleeping_state();
+    test_jog_counts_accumulate();
+    test_bad_checksum_dropped();
     return tfw::summary("test_xhc_pendant");
 }

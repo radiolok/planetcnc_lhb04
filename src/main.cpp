@@ -99,11 +99,9 @@ void listHidDevices() {
     }
     hid_device_info* devs = hid_enumerate(0x10CE, 0x0);
     for (hid_device_info* d = devs; d; d = d->next) {
-        std::printf("VID 0x%04X PID 0x%04X  %ls  %ls  (%s)\n",
-                    d->vendor_id, d->product_id,
+        std::printf("VID 0x%04X PID 0x%04X  %ls  %ls  (%s)\n", d->vendor_id, d->product_id,
                     d->manufacturer_string ? d->manufacturer_string : L"?",
-                    d->product_string ? d->product_string : L"?",
-                    d->path ? d->path : "");
+                    d->product_string ? d->product_string : L"?", d->path ? d->path : "");
     }
     hid_free_enumeration(devs);
     hid_exit();
@@ -132,10 +130,9 @@ int main(int argc, char** argv) {
     mpgd::Config cfg;
     std::string cfgError;
     bool cfgMissing = false;
-    if (!mpgd::ConfigManager::loadOrDefault(opts.configPath, cfg, cfgError,
-                                            cfgMissing)) {
-        std::fprintf(stderr, "error: invalid config %s:\n%s\n",
-                     opts.configPath.c_str(), cfgError.c_str());
+    if (!mpgd::ConfigManager::loadOrDefault(opts.configPath, cfg, cfgError, cfgMissing)) {
+        std::fprintf(stderr, "error: invalid config %s:\n%s\n", opts.configPath.c_str(),
+                     cfgError.c_str());
         return 2;
     }
     std::string logError;
@@ -143,8 +140,7 @@ int main(int argc, char** argv) {
         mpgd::logError("logging: %s", logError.c_str());
     }
     if (cfgMissing) {
-        mpgd::logWarn("config: %s not found; using built-in defaults",
-                      opts.configPath.c_str());
+        mpgd::logWarn("config: %s not found; using built-in defaults", opts.configPath.c_str());
     }
 
     if (!opts.profile.empty()) cfg.planetcnc.profile = opts.profile;
@@ -153,8 +149,7 @@ int main(int argc, char** argv) {
     mpgd::logInfo("mpgd starting (config=%s, profile=%s, gui=%s, attach=%s, sniff=%s)",
                   opts.configPath.c_str(),
                   cfg.planetcnc.profile.empty() ? "<default>" : cfg.planetcnc.profile.c_str(),
-                  opts.noGui ? "headless" : "yes",
-                  opts.attach ? "yes" : "no",
+                  opts.noGui ? "headless" : "yes", opts.attach ? "yes" : "no",
                   opts.sniff ? "yes" : "no");
 
     if (hid_init() != 0) {
@@ -182,12 +177,14 @@ int main(int argc, char** argv) {
 
         if (opts.attach) {
             if (!api.isRunningExt()) {
-                mpgd::logWarn("attach mode: no external TNG process detected; "
-                              "button/display commands may have no effect");
+                mpgd::logWarn(
+                    "attach mode: no external TNG process detected; "
+                    "button/display commands may have no effect");
             }
             state.jogEnabled = false;
-            mpgd::logWarn("attach mode: jogging disabled (Jog is not available "
-                          "through the external pipe interface)");
+            mpgd::logWarn(
+                "attach mode: jogging disabled (Jog is not available "
+                "through the external pipe interface)");
         } else {
             // Run() blocks for the lifetime of TNG: it runs the TNG message
             // loop on the calling thread and returns only after Exit(). Run it
@@ -215,8 +212,9 @@ int main(int argc, char** argv) {
                 // does not move the axes while the motor enable signal is off.
                 api.startCode("M10 P1");
             } else {
-                mpgd::logWarn("TNG did not report initialized within 30s; "
-                              "continuing anyway");
+                mpgd::logWarn(
+                    "TNG did not report initialized within 30s; "
+                    "continuing anyway");
             }
         }
     }
@@ -230,19 +228,18 @@ int main(int argc, char** argv) {
     mpgd::usb::HidDevice readDevice;
     mpgd::usb::HidDevice writeDevice;
     mpgd::ButtonQueue buttonQueue;
-    mpgd::XhcPendant pendant(state, buttonQueue, cfg.polling,
-                             cfg.device.verifyChecksum);
+    mpgd::XhcPendant pendant(state, buttonQueue, cfg.polling, cfg.device.verifyChecksum);
 
     // usb_hz / display_hz / jog_hz are validated to 1..1000 at config load.
     int jogPeriodMs = 1000 / cfg.polling.jogHz;
     int displayPeriodMs = 1000 / cfg.polling.displayHz;
 
-    mpgd::UsbPollThread usbThread(state, readDevice, writeDevice, pendant,
-                                  cfg.device, cfg.polling, opts.sniff);
+    mpgd::UsbPollThread usbThread(state, readDevice, writeDevice, pendant, cfg.device, cfg.polling,
+                                  opts.sniff);
     mpgd::ButtonThread buttonThread(state, buttonQueue, buttonHandler);
     mpgd::JogThread jogThread(state, jogController, jogPeriodMs);
-    mpgd::DisplayThread displayThread(state, writeDevice, displayUpdater,
-                                      stateReader, displayPeriodMs);
+    mpgd::DisplayThread displayThread(state, writeDevice, displayUpdater, stateReader,
+                                      displayPeriodMs);
 
     // --- Start threads -----------------------------------------------------
     std::vector<std::thread> threads;

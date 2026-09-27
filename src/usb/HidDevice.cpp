@@ -78,8 +78,8 @@ std::vector<HidDeviceInfo> enumerateDevices(uint16_t vendorId,
     return out;
 }
 
-bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds,
-                   HidDevice& readDev, HidDevice& writeDev, std::string& error) {
+bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds, HidDevice& readDev,
+                   HidDevice& writeDev, std::string& error) {
     const std::vector<HidDeviceInfo> devs = enumerateDevices(vendorId, productIds);
     if (devs.empty()) {
         error = "no XHC LHB04 device found";
@@ -104,9 +104,15 @@ bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds,
         uint8_t rep[8] = {0x06, 0, 0, 0, 0, 0, 0, 0};
         const int wr = probe.sendFeatureReport(rep, sizeof(rep));
         if (wr >= 0) {
-            if (!haveWrite) { writeInfo = info; haveWrite = true; }
+            if (!haveWrite) {
+                writeInfo = info;
+                haveWrite = true;
+            }
         } else {
-            if (!haveRead) { readInfo = info; haveRead = true; }
+            if (!haveRead) {
+                readInfo = info;
+                haveRead = true;
+            }
         }
     }
 

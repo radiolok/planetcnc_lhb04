@@ -30,7 +30,10 @@ static void test_astral_roundtrip() {
 
 static void test_invalid_utf8_replaced() {
     // Lone continuation byte, then a truncated 3-byte sequence.
-    const std::wstring w = wideFromUtf8(std::string("a\x80" "b\xE2\x82", 5));
+    const std::wstring w =
+        wideFromUtf8(std::string("a\x80"
+                                 "b\xE2\x82",
+                                 5));
     CHECK(w.size() >= 3);
     CHECK(w[0] == L'a');
     CHECK(w[1] == static_cast<wchar_t>(0xFFFD));

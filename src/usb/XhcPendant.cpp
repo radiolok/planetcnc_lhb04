@@ -5,10 +5,9 @@
 
 namespace mpgd {
 
-XhcPendant::XhcPendant(SharedState& state, ButtonQueue& buttons,
-                       const PollingConfig& polling, bool verifyChecksum)
-    : state_(state), buttons_(buttons), polling_(polling),
-      verifyChecksum_(verifyChecksum) {}
+XhcPendant::XhcPendant(SharedState& state, ButtonQueue& buttons, const PollingConfig& polling,
+                       bool verifyChecksum)
+    : state_(state), buttons_(buttons), polling_(polling), verifyChecksum_(verifyChecksum) {}
 
 bool XhcPendant::process(const uint8_t* data, size_t len, Clock::time_point now) {
     usb::ParsedInput p = usb::PacketParser::parseInput(data, len);
@@ -19,15 +18,13 @@ bool XhcPendant::process(const uint8_t* data, size_t len, Clock::time_point now)
     if (!p.checksumOk) {
         // The reference driver (xhc-hb04.cc) does not verify a checksum; this
         // is an optional defensive check enabled via config.
-        logDebug("pendant: checksum mismatch (got 0x%02X, expected 0x%02X)%s",
-                 p.checksumByte, p.expectedChecksum,
-                 verifyChecksum_ ? "; report dropped" : "");
+        logDebug("pendant: checksum mismatch (got 0x%02X, expected 0x%02X)%s", p.checksumByte,
+                 p.expectedChecksum, verifyChecksum_ ? "; report dropped" : "");
         if (verifyChecksum_) return false;
     }
 
     // Detect the "sleeping" state (all-zero fields, xhc-hb04.cc behaviour).
-    bool sleeping = (p.button1 == 0 && p.button2 == 0 && p.axisCode == 0 &&
-                     p.jogDelta == 0);
+    bool sleeping = (p.button1 == 0 && p.button2 == 0 && p.axisCode == 0 && p.jogDelta == 0);
 
     {
         std::lock_guard<std::mutex> lk(state_.mutex);
@@ -54,8 +51,8 @@ void XhcPendant::onButton(uint8_t code, Clock::time_point now) {
 void XhcPendant::tick(Clock::time_point now) {
     if (rawButton_ == committedButton_) return;
     if (haveEdge_) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - lastEdge_).count();
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - lastEdge_).count();
         // Debounce (SAFE-04): hold the change until the window has passed.
         if (elapsed < polling_.buttonDebounceMs) return;
     }
@@ -75,8 +72,7 @@ void XhcPendant::commit(uint8_t code, Clock::time_point now) {
             logWarn("pendant: button queue full; '%s' dropped", name.c_str());
         }
     } else if (previous != 0) {
-        logDebug("pendant: button '%s' released",
-                 xhc::buttonNameOrHex(previous).c_str());
+        logDebug("pendant: button '%s' released", xhc::buttonNameOrHex(previous).c_str());
     }
 }
 

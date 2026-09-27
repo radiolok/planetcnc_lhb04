@@ -38,72 +38,69 @@ bool ButtonHandler::execNamedCommand(const std::string& commandName) {
 
 bool ButtonHandler::dispatch(const ButtonAction& a) {
     switch (a.type) {
-    case ActionType::EStop:
-        return api_.estopToggle();
-    case ActionType::Stop:
-        return api_.stop();
-    case ActionType::Start:
-        return api_.start();
-    case ActionType::Pause:
-        return api_.pause(true);
-    case ActionType::PauseToggle:
-        return api_.pauseToggle();
-    case ActionType::ToggleStartPause:
-        if (api_.isPause()) return api_.start();
-        if (api_.isIdle() && !api_.isRunning()) return api_.start();
-        return api_.pause(true);
-    case ActionType::HomeAll:
-        return execNamedCommand("Machine.Home");
-    case ActionType::SetWorkZero:
-        return execNamedCommand("Machine.Work_Position.Offset.To_Zero");
-    case ActionType::SetWorkZeroXY:
-        return execNamedCommand("Machine.Work_Position.Axis_To_Zero.XY");
-    case ActionType::SetWorkZeroZ:
-        return execNamedCommand("Machine.Work_Position.Axis_To_Zero.Z");
-    case ActionType::SpindleToggle:
-        return execNamedCommand("Machine.Spindle");
-    case ActionType::FloodToggle:
-        return execNamedCommand("Machine.Flood");
-    case ActionType::MistToggle:
-        return execNamedCommand("Machine.Mist");
-    case ActionType::FeedOverride:
-    case ActionType::SpindleOverride: {
-        const std::string& param = (a.type == ActionType::FeedOverride)
-                                       ? cfg_.jogging.feedOverrideParam
-                                       : cfg_.jogging.spindleOverrideParam;
-        const std::optional<double> current = api_.getParam(param);
-        if (!current) {
-            logWarn("button: GetParam(%s) failed; override unchanged",
-                    param.c_str());
-            return false;
+        case ActionType::EStop:
+            return api_.estopToggle();
+        case ActionType::Stop:
+            return api_.stop();
+        case ActionType::Start:
+            return api_.start();
+        case ActionType::Pause:
+            return api_.pause(true);
+        case ActionType::PauseToggle:
+            return api_.pauseToggle();
+        case ActionType::ToggleStartPause:
+            if (api_.isPause()) return api_.start();
+            if (api_.isIdle() && !api_.isRunning()) return api_.start();
+            return api_.pause(true);
+        case ActionType::HomeAll:
+            return execNamedCommand("Machine.Home");
+        case ActionType::SetWorkZero:
+            return execNamedCommand("Machine.Work_Position.Offset.To_Zero");
+        case ActionType::SetWorkZeroXY:
+            return execNamedCommand("Machine.Work_Position.Axis_To_Zero.XY");
+        case ActionType::SetWorkZeroZ:
+            return execNamedCommand("Machine.Work_Position.Axis_To_Zero.Z");
+        case ActionType::SpindleToggle:
+            return execNamedCommand("Machine.Spindle");
+        case ActionType::FloodToggle:
+            return execNamedCommand("Machine.Flood");
+        case ActionType::MistToggle:
+            return execNamedCommand("Machine.Mist");
+        case ActionType::FeedOverride:
+        case ActionType::SpindleOverride: {
+            const std::string& param = (a.type == ActionType::FeedOverride)
+                                           ? cfg_.jogging.feedOverrideParam
+                                           : cfg_.jogging.spindleOverrideParam;
+            const std::optional<double> current = api_.getParam(param);
+            if (!current) {
+                logWarn("button: GetParam(%s) failed; override unchanged", param.c_str());
+                return false;
+            }
+            double value = std::clamp(*current + a.delta / 100.0, kOverrideMin, kOverrideMax);
+            return api_.setParam(param, value);
         }
-        double value = std::clamp(*current + a.delta / 100.0, kOverrideMin,
-                                  kOverrideMax);
-        return api_.setParam(param, value);
-    }
-    case ActionType::StepSize: {
-        const auto& steps = cfg_.jogging.stepSizes;
-        if (steps.empty()) return false;
-        std::lock_guard<std::mutex> lk(state_.mutex);
-        state_.stepSizeIndex =
-            (state_.stepSizeIndex + 1) % static_cast<int>(steps.size());
-        state_.stepSize = steps[static_cast<size_t>(state_.stepSizeIndex)];
-        logInfo("jog step size: %.3f mm", state_.stepSize);
-        return true;
-    }
-    case ActionType::Command:
-        if (a.command.empty()) return false;
-        return execNamedCommand(a.command);
-    case ActionType::GCode: {
-        if (a.command.empty()) return false;
-        bool ok = api_.startCode(a.command);
-        if (!ok) logWarn("button: StartCode('%s') failed", a.command.c_str());
-        return ok;
-    }
-    case ActionType::Noop:
-        return true;
-    case ActionType::Unknown:
-        break;
+        case ActionType::StepSize: {
+            const auto& steps = cfg_.jogging.stepSizes;
+            if (steps.empty()) return false;
+            std::lock_guard<std::mutex> lk(state_.mutex);
+            state_.stepSizeIndex = (state_.stepSizeIndex + 1) % static_cast<int>(steps.size());
+            state_.stepSize = steps[static_cast<size_t>(state_.stepSizeIndex)];
+            logInfo("jog step size: %.3f mm", state_.stepSize);
+            return true;
+        }
+        case ActionType::Command:
+            if (a.command.empty()) return false;
+            return execNamedCommand(a.command);
+        case ActionType::GCode: {
+            if (a.command.empty()) return false;
+            bool ok = api_.startCode(a.command);
+            if (!ok) logWarn("button: StartCode('%s') failed", a.command.c_str());
+            return ok;
+        }
+        case ActionType::Noop:
+            return true;
+        case ActionType::Unknown:
+            break;
     }
 
     logWarn("button: unknown action '%s'", a.name.c_str());

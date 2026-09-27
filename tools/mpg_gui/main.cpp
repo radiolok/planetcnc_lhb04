@@ -91,8 +91,8 @@ std::string nowStamp() {
     std::tm tmv{};
     localtime_s(&tmv, &t);
     char buf[64];
-    std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
-                  tmv.tm_hour, tmv.tm_min, tmv.tm_sec, static_cast<int>(ms.count()));
+    std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d", tmv.tm_hour, tmv.tm_min, tmv.tm_sec,
+                  static_cast<int>(ms.count()));
     return buf;
 }
 
@@ -104,14 +104,22 @@ void logAdd(const std::string& text) {
 
 const char* axisName(uint8_t code) {
     switch (code) {
-        case mpgd::xhc::kAxisOff:     return "OFF";
-        case mpgd::xhc::kAxisX:       return "X";
-        case mpgd::xhc::kAxisY:       return "Y";
-        case mpgd::xhc::kAxisZ:       return "Z";
-        case mpgd::xhc::kAxisA:       return "A";
-        case mpgd::xhc::kAxisSpindle: return "Spindle";
-        case mpgd::xhc::kAxisFeed:    return "Feed";
-        default:                      return "?";
+        case mpgd::xhc::kAxisOff:
+            return "OFF";
+        case mpgd::xhc::kAxisX:
+            return "X";
+        case mpgd::xhc::kAxisY:
+            return "Y";
+        case mpgd::xhc::kAxisZ:
+            return "Z";
+        case mpgd::xhc::kAxisA:
+            return "A";
+        case mpgd::xhc::kAxisSpindle:
+            return "Spindle";
+        case mpgd::xhc::kAxisFeed:
+            return "Feed";
+        default:
+            return "?";
     }
 }
 
@@ -119,13 +127,20 @@ const char* axisName(uint8_t code) {
 // X, Y, Z, A, Spindle, Feed (indexes 0..5). Returns -1 for OFF/unknown.
 int axisVariableIndex(uint8_t code) {
     switch (code) {
-        case mpgd::xhc::kAxisX:       return 0;
-        case mpgd::xhc::kAxisY:       return 1;
-        case mpgd::xhc::kAxisZ:       return 2;
-        case mpgd::xhc::kAxisA:       return 3;
-        case mpgd::xhc::kAxisSpindle: return 4;
-        case mpgd::xhc::kAxisFeed:    return 5;
-        default:                      return -1;
+        case mpgd::xhc::kAxisX:
+            return 0;
+        case mpgd::xhc::kAxisY:
+            return 1;
+        case mpgd::xhc::kAxisZ:
+            return 2;
+        case mpgd::xhc::kAxisA:
+            return 3;
+        case mpgd::xhc::kAxisSpindle:
+            return 4;
+        case mpgd::xhc::kAxisFeed:
+            return 5;
+        default:
+            return -1;
     }
 }
 
@@ -140,9 +155,9 @@ const char* axisVariableName(int idx) {
 // The mapping follows the reference driver: the three work lines show
 // X/Y/Z (line 1 shows A when the A axis is selected), the three machine
 // lines mirror X/Y/Z, and Spindle/Feed are exposed as override percentages.
-void buildDisplayFrame(const int64_t (&acc)[6], uint8_t axisCode,
-                       uint8_t (&reports)[mpgd::xhc::kDisplayReportsCount]
-                                          [mpgd::xhc::kDisplayReportSize]) {
+void buildDisplayFrame(
+    const int64_t (&acc)[6], uint8_t axisCode,
+    uint8_t (&reports)[mpgd::xhc::kDisplayReportsCount][mpgd::xhc::kDisplayReportSize]) {
     const bool aActive = (axisCode == mpgd::xhc::kAxisA);
 
     mpgd::usb::DisplayData d;
@@ -164,8 +179,7 @@ void buildDisplayFrame(const int64_t (&acc)[6], uint8_t axisCode,
     mpgd::usb::PacketParser::buildDisplayPayload(d, payload);
     for (size_t r = 0; r < mpgd::xhc::kDisplayReportsCount; ++r) {
         reports[r][0] = mpgd::xhc::kOutputReportId;
-        for (size_t i = 0; i < 7; ++i)
-            reports[r][i + 1] = payload[r * 7 + i];
+        for (size_t i = 0; i < 7; ++i) reports[r][i + 1] = payload[r * 7 + i];
     }
 }
 
@@ -273,9 +287,8 @@ void readerThread() {
             // Parse what we got. r > 0 is data, never a fatal error: a report
             // shorter/longer than 8 bytes is handled best-effort instead of
             // dropping the connection.
-            mpgd::usb::ParsedInput p =
-                (r >= 8) ? mpgd::usb::PacketParser::parseInput(buf, 8)
-                         : parsePartial(buf, static_cast<size_t>(r));
+            mpgd::usb::ParsedInput p = (r >= 8) ? mpgd::usb::PacketParser::parseInput(buf, 8)
+                                                : parsePartial(buf, static_cast<size_t>(r));
 
             if (p.reportId != mpgd::xhc::kInputReportId) {
                 if (p.reportId != lastBadReportId) {
@@ -287,15 +300,16 @@ void readerThread() {
                 }
             }
 
-            const bool sleeping = (p.button1 == 0 && p.button2 == 0 &&
-                                   p.axisCode == 0 && p.jogDelta == 0);
+            const bool sleeping =
+                (p.button1 == 0 && p.button2 == 0 && p.axisCode == 0 && p.jogDelta == 0);
 
             std::string eventText;
             bool hasEvent = false;
             if (p.button1 != lastButton) {
                 auto now2 = std::chrono::steady_clock::now();
                 auto elapsed =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(now2 - lastBtnEdge).count();
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now2 - lastBtnEdge)
+                        .count();
                 if (elapsed >= 15) {
                     if (p.button1 != 0)
                         eventText = "Button press: " + mpgd::xhc::buttonNameOrHex(p.button1);
@@ -312,9 +326,8 @@ void readerThread() {
                 Snapshot& s = g_snap;
                 s.havePacket = true;
                 std::memset(s.raw, 0, sizeof(s.raw));
-                const size_t n = static_cast<size_t>(r) < sizeof(s.raw)
-                                     ? static_cast<size_t>(r)
-                                     : sizeof(s.raw);
+                const size_t n =
+                    static_cast<size_t>(r) < sizeof(s.raw) ? static_cast<size_t>(r) : sizeof(s.raw);
                 std::memcpy(s.raw, buf, n);
                 s.rawLen = static_cast<uint8_t>(n);
                 s.reportId = p.reportId;
@@ -342,7 +355,8 @@ void readerThread() {
             } else if (p.jogDelta != 0) {
                 auto now2 = std::chrono::steady_clock::now();
                 auto elapsed =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(now2 - lastWheelLog).count();
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now2 - lastWheelLog)
+                        .count();
                 if (elapsed >= 100) {
                     char b[32];
                     std::snprintf(b, sizeof(b), "Wheel: %+d", static_cast<int>(p.jogDelta));
@@ -391,13 +405,13 @@ void readerThread() {
                     for (int i = 0; i < 6; ++i) acc[i] = g_snap.axisAccum[i];
                     axisCode = g_snap.axisCode;
                 }
-                uint8_t frame[mpgd::xhc::kDisplayReportsCount]
-                             [mpgd::xhc::kDisplayReportSize];
+                uint8_t frame[mpgd::xhc::kDisplayReportsCount][mpgd::xhc::kDisplayReportSize];
                 buildDisplayFrame(acc, axisCode, frame);
 
                 int firstWr = 0;
                 for (size_t rr = 0; rr < mpgd::xhc::kDisplayReportsCount; ++rr) {
-                    const int wr = writeDev.sendFeatureReport(frame[rr], mpgd::xhc::kDisplayReportSize);
+                    const int wr =
+                        writeDev.sendFeatureReport(frame[rr], mpgd::xhc::kDisplayReportSize);
                     if (rr == 0) firstWr = wr;
                     if (wr < 0) {
                         if (!lastDisplayWriteFailed) {
@@ -418,8 +432,7 @@ void readerThread() {
         }
     }
 
-    if (g_rawFile.is_open())
-        g_rawFile.close();
+    if (g_rawFile.is_open()) g_rawFile.close();
     readDev.close();
     writeDev.close();
 }
@@ -464,8 +477,7 @@ void DrawUI() {
     ImGui::TextUnformatted(raw);
     if (g_mono) ImGui::PopFont();
     ImGui::SameLine();
-    if (ImGui::SmallButton("Copy raw"))
-        ImGui::SetClipboardText(raw);
+    if (ImGui::SmallButton("Copy raw")) ImGui::SetClipboardText(raw);
 
     ImGui::Separator();
     if (ImGui::BeginTable("fields", 2, ImGuiTableFlags_SizingStretchProp)) {
@@ -505,9 +517,9 @@ void DrawUI() {
         ImGui::TextUnformatted("Checksum");
         ImGui::TableSetColumnIndex(1);
         if (s.havePacket) {
-            ImGui::TextColored(s.checksumOk ? ImVec4(0.3f, 1.0f, 0.4f, 1.0f)
-                                            : ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
-                               "%s  %s", cs, s.checksumOk ? "OK" : "MISMATCH");
+            ImGui::TextColored(
+                s.checksumOk ? ImVec4(0.3f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
+                "%s  %s", cs, s.checksumOk ? "OK" : "MISMATCH");
         } else {
             ImGui::TextUnformatted("-");
         }
@@ -522,10 +534,13 @@ void DrawUI() {
 
     ImGui::Separator();
     ImGui::Text("Axis selector:");
-    const struct { uint8_t code; const char* name; } axes[] = {
-        {mpgd::xhc::kAxisOff, "OFF"}, {mpgd::xhc::kAxisX, "X"},
-        {mpgd::xhc::kAxisY, "Y"},     {mpgd::xhc::kAxisZ, "Z"},
-        {mpgd::xhc::kAxisA, "A"},     {mpgd::xhc::kAxisSpindle, "Spindle"},
+    const struct {
+        uint8_t code;
+        const char* name;
+    } axes[] = {
+        {mpgd::xhc::kAxisOff, "OFF"},   {mpgd::xhc::kAxisX, "X"},
+        {mpgd::xhc::kAxisY, "Y"},       {mpgd::xhc::kAxisZ, "Z"},
+        {mpgd::xhc::kAxisA, "A"},       {mpgd::xhc::kAxisSpindle, "Spindle"},
         {mpgd::xhc::kAxisFeed, "Feed"},
     };
     for (const auto& a : axes) {
@@ -539,8 +554,8 @@ void DrawUI() {
 
     ImGui::Separator();
     ImGui::Text("MPG wheel:");
-    const char* dir = s.jogDelta == 0 ? "-"
-                      : (s.jogDelta > 0 ? "clockwise (+)" : "counter-clockwise (-)");
+    const char* dir =
+        s.jogDelta == 0 ? "-" : (s.jogDelta > 0 ? "clockwise (+)" : "counter-clockwise (-)");
     ImGui::Text("Accumulated: %lld   Last: %+d  (%s)", static_cast<long long>(s.jogAccum),
                 static_cast<int>(s.jogDelta), dir);
 
@@ -549,22 +564,22 @@ void DrawUI() {
     const int vi = axisVariableIndex(s.axisCode);
     for (int i = 0; i < 6; ++i) {
         if (i == vi)
-            ImGui::TextColored(ImVec4(0.25f, 1.0f, 0.4f, 1.0f), "%s=%lld",
-                               axisVariableName(i), static_cast<long long>(s.axisAccum[i]));
+            ImGui::TextColored(ImVec4(0.25f, 1.0f, 0.4f, 1.0f), "%s=%lld", axisVariableName(i),
+                               static_cast<long long>(s.axisAccum[i]));
         else
             ImGui::TextDisabled("%s=%lld", axisVariableName(i),
                                 static_cast<long long>(s.axisAccum[i]));
         ImGui::SameLine(0.0f, 18.0f);
     }
     ImGui::NewLine();
-    ImGui::TextDisabled("wheel updates only the selected variable; X/Y/Z on the "
-                        "3 LCD lines, A on line 1, S/F as override %%");
+    ImGui::TextDisabled(
+        "wheel updates only the selected variable; X/Y/Z on the "
+        "3 LCD lines, A on line 1, S/F as override %%");
 
     ImGui::Separator();
     ImGui::Text("Button:");
     if (s.button1)
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s (0x%02X)", b1.c_str(),
-                           s.button1);
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%s (0x%02X)", b1.c_str(), s.button1);
     else
         ImGui::TextDisabled("none");
 
@@ -591,8 +606,7 @@ void DrawUI() {
     ImGui::SameLine();
     if (ImGui::Button("Copy log")) {
         std::string all;
-        for (const auto& e : logs)
-            all += e.stamp + "  " + e.text + "\n";
+        for (const auto& e : logs) all += e.stamp + "  " + e.text + "\n";
         ImGui::SetClipboardText(all.c_str());
     }
     ImGui::SameLine();
@@ -608,24 +622,21 @@ void DrawUI() {
         ImGui::TextUnformatted(e.text.c_str());
     }
     if (g_mono) ImGui::PopFont();
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
-        ImGui::SetScrollHereY(1.0f);
+    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f) ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
     ImGui::End();
 }
 
 } // namespace
 
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
-                                                             WPARAM wParam, LPARAM lParam);
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam,
+                                                             LPARAM lParam);
 
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
-        return true;
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) return true;
     switch (msg) {
         case WM_SYSCOMMAND:
-            if ((wParam & 0xfff0) == SC_KEYMENU)
-                return 0; // disable the ALT menu
+            if ((wParam & 0xfff0) == SC_KEYMENU) return 0; // disable the ALT menu
             break;
         case WM_DESTROY:
             ::PostQuitMessage(0);
@@ -644,14 +655,12 @@ extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.lpszClassName = L"mpg_gui_class";
-    if (!RegisterClassExW(&wc))
-        return 1;
+    if (!RegisterClassExW(&wc)) return 1;
 
-    HWND hwnd = CreateWindowW(wc.lpszClassName, L"MPG adapter test",
-                              WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                              1200, 800, nullptr, nullptr, wc.hInstance, nullptr);
-    if (!hwnd)
-        return 1;
+    HWND hwnd =
+        CreateWindowW(wc.lpszClassName, L"MPG adapter test", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+                      CW_USEDEFAULT, 1200, 800, nullptr, nullptr, wc.hInstance, nullptr);
+    if (!hwnd) return 1;
 
     HDC hDc = GetDC(hwnd);
     PIXELFORMATDESCRIPTOR pfd = {};
@@ -679,8 +688,7 @@ extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplOpenGL3_Init("#version 130");
 
-    if (hid_init() != 0)
-        logAdd("hid_init failed");
+    if (hid_init() != 0) logAdd("hid_init failed");
 
     std::thread reader(readerThread);
 
@@ -695,11 +703,9 @@ extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
-            if (msg.message == WM_QUIT)
-                g_shutdown.store(true);
+            if (msg.message == WM_QUIT) g_shutdown.store(true);
         }
-        if (g_shutdown.load())
-            break;
+        if (g_shutdown.load()) break;
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
@@ -720,13 +726,11 @@ extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         const auto frameEnd = std::chrono::steady_clock::now();
         const auto elapsed =
             std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart);
-        if (elapsed < kFrame)
-            std::this_thread::sleep_for(kFrame - elapsed);
+        if (elapsed < kFrame) std::this_thread::sleep_for(kFrame - elapsed);
     }
 
     g_shutdown.store(true);
-    if (reader.joinable())
-        reader.join();
+    if (reader.joinable()) reader.join();
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplWin32_Shutdown();
