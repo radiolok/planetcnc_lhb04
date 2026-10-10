@@ -8,7 +8,7 @@
 
 namespace mpgd {
 
-// Current controller/machine state, refreshed by StateReader (display thread).
+// Current controller/machine state, refreshed by StateReader (state thread).
 struct MachineState {
     double workX = 0.0, workY = 0.0, workZ = 0.0;
     double motorX = 0.0, motorY = 0.0, motorZ = 0.0;
@@ -33,11 +33,45 @@ struct PendantState {
     std::atomic<int> jogCounts{0};
 };
 
-// Central shared state. Guarded by `mutex`; the two atomics may be touched
-// without the lock where indicated.
+// Consistent copy of the lock-guarded part of SharedState. Readers take one
+// with SharedState::snapshot() and then work on the copy without the lock,
+// so derived values (selected axis, e-stop, step size) always come from the
+// same instant.
+struct StateSnapshot {
+    MachineState machine;
+    uint8_t axisCode = 0;
+    bool pendantConnected = false;
+    bool pendantSleeping = false;
+    bool jogEnabled = true;
+    double stepSize = 0.01;
+    int stepSizeIndex = 1;
+
+    // True while axis rotary is OFF (skip display updates, FR-04.5).
+    bool axisOff() const { return axisCode == xhc::kAxisOff; }
+
+    // Current selected axis index for jogging (0=X,1=Y,2=Z,3=A); -1 when the
+    // rotary is not on an axis position.
+    int selectedAxis() const {
+        switch (axisCode) {
+            case xhc::kAxisX: return 0;
+            case xhc::kAxisY: return 1;
+            case xhc::kAxisZ: return 2;
+            case xhc::kAxisA: return 3;
+            default: return -1;
+        }
+    }
+
+    // True when the rotary selects feed/spindle override.
+    bool feedOverrideSelected() const { return axisCode == xhc::kAxisFeed; }
+    bool spindleOverrideSelected() const { return axisCode == xhc::kAxisSpindle; }
+};
+
+// Central shared state. Every non-atomic member is guarded by `mutex`:
+// writers lock it directly, readers use snapshot(). The derived helpers live
+// on StateSnapshot only, so they cannot be called on live, unlocked state.
 class SharedState {
 public:
-    std::mutex mutex;
+    mutable std::mutex mutex;
 
     MachineState machine;
     PendantState pendant;
@@ -52,26 +86,19 @@ public:
     // Process-wide shutdown request (no lock needed).
     std::atomic<bool> shutdown{false};
 
-    // True while axis rotary is OFF (skip display updates, FR-04.5).
-    bool axisOff() const {
-        return pendant.axisCode == xhc::kAxisOff;
+    // Copies the guarded state under the lock.
+    StateSnapshot snapshot() const {
+        std::lock_guard<std::mutex> lk(mutex);
+        StateSnapshot s;
+        s.machine = machine;
+        s.axisCode = pendant.axisCode;
+        s.pendantConnected = pendant.connected;
+        s.pendantSleeping = pendant.sleeping;
+        s.jogEnabled = jogEnabled;
+        s.stepSize = stepSize;
+        s.stepSizeIndex = stepSizeIndex;
+        return s;
     }
-
-    // Current selected axis index for jogging (0=X,1=Y,2=Z,3=A); -1 when the
-    // rotary is not on an axis position.
-    int selectedAxis() const {
-        switch (pendant.axisCode) {
-            case xhc::kAxisX: return 0;
-            case xhc::kAxisY: return 1;
-            case xhc::kAxisZ: return 2;
-            case xhc::kAxisA: return 3;
-            default: return -1;
-        }
-    }
-
-    // True when the rotary selects feed/spindle override.
-    bool feedOverrideSelected() const { return pendant.axisCode == xhc::kAxisFeed; }
-    bool spindleOverrideSelected() const { return pendant.axisCode == xhc::kAxisSpindle; }
 };
 
 } // namespace mpgd

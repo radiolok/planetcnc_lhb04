@@ -40,20 +40,20 @@ static void test_accumulation() {
 static void test_axis_mapping() {
     SharedState state;
     state.pendant.axisCode = xhc::kAxisX;
-    CHECK_EQ(state.selectedAxis(), 0);
+    CHECK_EQ(state.snapshot().selectedAxis(), 0);
     state.pendant.axisCode = xhc::kAxisY;
-    CHECK_EQ(state.selectedAxis(), 1);
+    CHECK_EQ(state.snapshot().selectedAxis(), 1);
     state.pendant.axisCode = xhc::kAxisZ;
-    CHECK_EQ(state.selectedAxis(), 2);
+    CHECK_EQ(state.snapshot().selectedAxis(), 2);
     state.pendant.axisCode = xhc::kAxisA;
-    CHECK_EQ(state.selectedAxis(), 3);
+    CHECK_EQ(state.snapshot().selectedAxis(), 3);
     state.pendant.axisCode = xhc::kAxisOff;
-    CHECK_EQ(state.selectedAxis(), -1);
-    CHECK(state.axisOff());
+    CHECK_EQ(state.snapshot().selectedAxis(), -1);
+    CHECK(state.snapshot().axisOff());
     state.pendant.axisCode = xhc::kAxisFeed;
-    CHECK(state.feedOverrideSelected());
+    CHECK(state.snapshot().feedOverrideSelected());
     state.pendant.axisCode = xhc::kAxisSpindle;
-    CHECK(state.spindleOverrideSelected());
+    CHECK(state.snapshot().spindleOverrideSelected());
 }
 
 int main() {

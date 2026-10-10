@@ -2,9 +2,9 @@
 
 #include "logic/JogController.h"
 #include "utils/Logger.h"
+#include "utils/PeriodicTimer.h"
 
 #include <chrono>
-#include <thread>
 
 namespace mpgd {
 
@@ -13,9 +13,10 @@ JogThread::JogThread(SharedState& state, JogController& controller, int periodMs
 
 void JogThread::run() {
     logInfo("jog thread started (period=%dms)", periodMs_);
+    PeriodicTimer timer{std::chrono::milliseconds(periodMs_)};
     while (!state_.shutdown.load()) {
         controller_.tick();
-        std::this_thread::sleep_for(std::chrono::milliseconds(periodMs_));
+        timer.wait();
     }
     controller_.stopNow();
     logInfo("jog thread stopped");

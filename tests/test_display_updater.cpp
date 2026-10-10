@@ -2,6 +2,7 @@
 #include "usb/PacketParser.h"
 
 #include <cstring>
+#include <limits>
 
 using namespace mpgd;
 using namespace mpgd::usb;
@@ -36,6 +37,32 @@ static void test_encode_coordinate_large() {
     PacketParser::encodeCoordinate(-9999.999, buf);
     CHECK_EQ(readLE16(buf), 9999);
     CHECK_EQ(readLE16(buf + 2), static_cast<uint16_t>(0x8000 | 9990));
+}
+
+// Out-of-range values saturate instead of wrapping (review item 20).
+static void test_encode_coordinate_saturates() {
+    uint8_t buf[4] = {0};
+    PacketParser::encodeCoordinate(70000.0, buf);
+    CHECK_EQ(readLE16(buf), 65535);
+    CHECK_EQ(readLE16(buf + 2), 9999);
+    PacketParser::encodeCoordinate(-1e12, buf);
+    CHECK_EQ(readLE16(buf), 65535);
+    CHECK_EQ(readLE16(buf + 2), static_cast<uint16_t>(0x8000 | 9999));
+    PacketParser::encodeCoordinate(std::numeric_limits<double>::quiet_NaN(), buf);
+    CHECK_EQ(readLE16(buf), 0);
+    CHECK_EQ(readLE16(buf + 2), 0);
+}
+
+static void test_build_display_rates_saturate() {
+    DisplayData d;
+    d.feedValue = 1000.0;     // x60 = 60000, beyond int16
+    d.spindleRps = -1000.0;   // x60 = -60000
+    d.feedOverride = std::numeric_limits<double>::infinity();
+    uint8_t payload[xhc::kDisplayBufSize];
+    PacketParser::buildDisplayPayload(d, payload);
+    CHECK_EQ(readLE16(payload + 27), 0);
+    CHECK_EQ(readLE16(payload + 31), 32767);
+    CHECK_EQ(readLE16(payload + 33), 0x8000);
 }
 
 static void test_build_display_payload() {
@@ -110,6 +137,8 @@ int main() {
     test_encode_coordinate_negative();
     test_encode_coordinate_zero();
     test_encode_coordinate_large();
+    test_encode_coordinate_saturates();
+    test_build_display_rates_saturate();
     test_build_display_payload();
     test_build_display_stepsizes();
     test_build_display_inch_flag();

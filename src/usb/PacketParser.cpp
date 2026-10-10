@@ -1,6 +1,8 @@
 #include "usb/PacketParser.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace mpgd::usb {
 
@@ -14,6 +16,17 @@ void writeU16LE(uint8_t* out, uint16_t v) {
 void writeS16(uint8_t* out, int v) {
     writeU16LE(out, static_cast<uint16_t>(v));
 }
+
+// Scales and rounds a display value into the signed 16-bit field, saturating
+// instead of wrapping (a wrapped feed would show a small or negative number).
+int toS16(double value, double scale) {
+    const double v = value * scale;
+    if (!std::isfinite(v)) return 0;
+    return static_cast<int>(std::llround(std::clamp(v, -32768.0, 32767.0)));
+}
+
+// Largest |coordinate| the 16-bit integer part + 4-digit fraction can hold.
+constexpr double kMaxCoordinate = 65535.9999;
 
 uint8_t stepsizeDisplayCode(int stepsize) {
     switch (stepsize) {
@@ -78,8 +91,11 @@ void PacketParser::encodeCoordinate(double value, uint8_t* out) {
     //   int_v      = round(|v| * 10000)
     //   int_part   = int_v / 10000
     //   fract_part = int_v % 10000, bit 15 set when v < 0
-    unsigned int int_v = static_cast<unsigned int>(
-        llround(std::fabs(value) * 10000.0));
+    // Out-of-range values saturate rather than wrap; NaN/inf show as 0.
+    double mag = std::fabs(value);
+    if (!std::isfinite(mag)) mag = 0.0;
+    mag = std::min(mag, kMaxCoordinate);
+    unsigned int int_v = static_cast<unsigned int>(std::llround(mag * 10000.0));
     uint16_t intPart = static_cast<uint16_t>(int_v / 10000u);
     uint16_t fractPart = static_cast<uint16_t>(int_v % 10000u);
     if (value < 0.0) fractPart = static_cast<uint16_t>(fractPart | 0x8000u);
@@ -107,10 +123,10 @@ void PacketParser::buildDisplayPayload(const DisplayData& d, uint8_t* out) {
     encodeCoordinate(d.machine3, p); p += 4;
 
     // Override and rate values (x100 / x60 per xhc-hb04 man page).
-    writeS16(p, static_cast<int>(llround(d.feedOverride * 100.0)));  p += 2;
-    writeS16(p, static_cast<int>(llround(d.spindleOverride * 100.0))); p += 2;
-    writeS16(p, static_cast<int>(llround(d.feedValue * 60.0)));      p += 2;
-    writeS16(p, static_cast<int>(llround(d.spindleRps * 60.0)));     p += 2;
+    writeS16(p, toS16(d.feedOverride, 100.0));  p += 2;
+    writeS16(p, toS16(d.spindleOverride, 100.0)); p += 2;
+    writeS16(p, toS16(d.feedValue, 60.0));      p += 2;
+    writeS16(p, toS16(d.spindleRps, 60.0));     p += 2;
 
     out[xhc::kDispStepsizeByte] = stepsizeDisplayCode(d.stepsize);
 

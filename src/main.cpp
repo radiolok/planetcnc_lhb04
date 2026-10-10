@@ -1,10 +1,12 @@
 #include "config/ConfigManager.h"
 #include "logic/ButtonHandler.h"
+#include "logic/ButtonQueue.h"
 #include "logic/DisplayUpdater.h"
 #include "logic/JogController.h"
 #include "logic/SharedState.h"
 #include "planetcnc/StateReader.h"
 #include "planetcnc/TngApi.h"
+#include "threads/ButtonThread.h"
 #include "threads/DisplayThread.h"
 #include "threads/JogThread.h"
 #include "threads/UsbPollThread.h"
@@ -227,16 +229,18 @@ int main(int argc, char** argv) {
 
     mpgd::usb::HidDevice readDevice;
     mpgd::usb::HidDevice writeDevice;
-    mpgd::XhcPendant pendant(state, buttonHandler, cfg.polling,
+    mpgd::ButtonQueue buttonQueue;
+    mpgd::XhcPendant pendant(state, buttonQueue, cfg.polling,
                              cfg.device.verifyChecksum);
 
-    // usb_hz / display_hz are validated to 1..1000 at config load.
-    int usbPeriodMs = 1000 / cfg.polling.usbHz;
+    // usb_hz / display_hz / jog_hz are validated to 1..1000 at config load.
+    int jogPeriodMs = 1000 / cfg.polling.jogHz;
     int displayPeriodMs = 1000 / cfg.polling.displayHz;
 
     mpgd::UsbPollThread usbThread(state, readDevice, writeDevice, pendant,
                                   cfg.device, cfg.polling, opts.sniff);
-    mpgd::JogThread jogThread(state, jogController, usbPeriodMs);
+    mpgd::ButtonThread buttonThread(state, buttonQueue, buttonHandler);
+    mpgd::JogThread jogThread(state, jogController, jogPeriodMs);
     mpgd::DisplayThread displayThread(state, writeDevice, displayUpdater,
                                       stateReader, displayPeriodMs);
 
@@ -244,6 +248,7 @@ int main(int argc, char** argv) {
     std::vector<std::thread> threads;
     threads.emplace_back([&] { usbThread.run(); });
     if (!opts.sniff) {
+        threads.emplace_back([&] { buttonThread.run(); });
         threads.emplace_back([&] { jogThread.run(); });
         threads.emplace_back([&] { displayThread.run(); });
     }

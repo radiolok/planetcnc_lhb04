@@ -1,6 +1,7 @@
 #include "planetcnc/TngApi.h"
 
 #include "utils/Logger.h"
+#include "utils/Utf8.h"
 
 #include <atomic>
 #include <cmath>
@@ -25,7 +26,9 @@ void* loadLibrary(const std::string& path) {
     if (path.empty()) {
         return reinterpret_cast<void*>(LoadLibraryW(L"PlanetCNCLib64.dll"));
     }
-    std::wstring w(path.begin(), path.end());
+    // The configured path is UTF-8 (YAML); widening byte by byte would
+    // corrupt any non-ASCII directory name.
+    const std::wstring w = wideFromUtf8(path);
     // LOAD_WITH_ALTERED_SEARCH_PATH makes the loader resolve this DLL's
     // dependencies relative to its own directory. PlanetCNCLib64.dll depends
     // on PlanetCNCCore64.dll which lives next to it, so a full path works

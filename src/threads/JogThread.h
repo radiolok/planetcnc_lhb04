@@ -6,7 +6,7 @@ namespace mpgd {
 
 class JogController;
 
-// Periodic jog processor (10 ms cadence).
+// Periodic jog processor (polling.jog_hz, 10 ms by default).
 class JogThread {
 public:
     JogThread(SharedState& state, JogController& controller, int periodMs);

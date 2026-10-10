@@ -45,6 +45,7 @@ struct JoggingConfig {
 struct PollingConfig {
     int usbHz = 100;                 // poll rate for USB input
     int displayHz = 20;              // LCD refresh rate
+    int jogHz = 100;                 // jog servo tick rate
     int reconnectMs = 2000;          // USB reconnect interval
     int buttonDebounceMs = 50;       // SAFE-04
     bool displayAlways = false;      // keep sending LCD data when axis=OFF
