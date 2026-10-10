@@ -17,7 +17,7 @@ class ButtonHandler;
 class XhcPendant {
 public:
     XhcPendant(SharedState& state, ButtonHandler& buttons,
-               const PollingConfig& polling);
+               const PollingConfig& polling, bool verifyChecksum);
 
     // Processes one raw 8-byte input report. Returns false for malformed
     // packets (wrong report id / short buffer / checksum mismatch when
@@ -30,6 +30,7 @@ private:
     SharedState& state_;
     ButtonHandler& buttons_;
     const PollingConfig& polling_;
+    bool verifyChecksum_;
 
     uint8_t lastButton_ = 0;
     std::chrono::steady_clock::time_point lastEdge_{};

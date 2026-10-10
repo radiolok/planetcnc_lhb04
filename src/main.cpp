@@ -124,14 +124,25 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // Load config (defaults overlaid with the file).
+    // Load config (defaults overlaid with the file). A broken config is
+    // fatal: falling back to defaults would silently change button bindings
+    // and jog settings.
+    mpgd::Config cfg;
     std::string cfgError;
-    mpgd::Config cfg = mpgd::ConfigManager::loadOrDefault(opts.configPath, cfgError);
-    if (!cfgError.empty()) {
-        mpgd::Logger::init(cfg.logging.level, cfg.logging.file);
-        mpgd::logWarn("config: %s", cfgError.c_str());
-    } else {
-        mpgd::Logger::init(cfg.logging.level, cfg.logging.file);
+    bool cfgMissing = false;
+    if (!mpgd::ConfigManager::loadOrDefault(opts.configPath, cfg, cfgError,
+                                            cfgMissing)) {
+        std::fprintf(stderr, "error: invalid config %s:\n%s\n",
+                     opts.configPath.c_str(), cfgError.c_str());
+        return 2;
+    }
+    std::string logError;
+    if (!mpgd::Logger::init(cfg.logging.level, cfg.logging.file, logError)) {
+        mpgd::logError("logging: %s", logError.c_str());
+    }
+    if (cfgMissing) {
+        mpgd::logWarn("config: %s not found; using built-in defaults",
+                      opts.configPath.c_str());
     }
 
     if (!opts.profile.empty()) cfg.planetcnc.profile = opts.profile;
@@ -216,10 +227,12 @@ int main(int argc, char** argv) {
 
     mpgd::usb::HidDevice readDevice;
     mpgd::usb::HidDevice writeDevice;
-    mpgd::XhcPendant pendant(state, buttonHandler, cfg.polling);
+    mpgd::XhcPendant pendant(state, buttonHandler, cfg.polling,
+                             cfg.device.verifyChecksum);
 
-    int usbPeriodMs = 1000 / (cfg.polling.usbHz > 0 ? cfg.polling.usbHz : 100);
-    int displayPeriodMs = 1000 / (cfg.polling.displayHz > 0 ? cfg.polling.displayHz : 20);
+    // usb_hz / display_hz are validated to 1..1000 at config load.
+    int usbPeriodMs = 1000 / cfg.polling.usbHz;
+    int displayPeriodMs = 1000 / cfg.polling.displayHz;
 
     mpgd::UsbPollThread usbThread(state, readDevice, writeDevice, pendant,
                                   cfg.device, cfg.polling, opts.sniff);

@@ -8,8 +8,6 @@
 
 namespace mpgd {
 
-enum class JogMode { Step, Continuous };
-
 // Current controller/machine state, refreshed by StateReader (display thread).
 struct MachineState {
     double workX = 0.0, workY = 0.0, workZ = 0.0;
@@ -27,7 +25,6 @@ struct MachineState {
 
 // Latest pendant input, consumed by the jog/display/button threads.
 struct PendantState {
-    uint8_t button1 = 0;     // active button code (0 = none)
     uint8_t axisCode = 0;    // raw rotary selector position
     int8_t lastJogDelta = 0; // most recent wheel delta (debug)
     bool connected = false;
@@ -46,10 +43,10 @@ public:
     PendantState pendant;
 
     // Jog configuration/state.
-    JogMode jogMode{JogMode::Step};
     bool jogEnabled{true};           // false in attach mode
-    bool estopBlocked{false};        // jog blocked by e-stop
-    double stepSize{0.01};           // mm per wheel count (current stepsize)
+    // mm per wheel count; set from jogging.step_sizes by ButtonHandler and
+    // cycled by the `step_size` action.
+    double stepSize{0.01};
     int stepSizeIndex{1};
 
     // Process-wide shutdown request (no lock needed).

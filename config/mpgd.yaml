@@ -4,10 +4,11 @@
 device:
   vendor_id: 0x10CE
   product_ids: [0xEB70, 0xEB71, 0xEB93]
-  auto_detect: true
-  # Optional: verify the XOR checksum of incoming reports. The reference
-  # driver (LinuxCNC xhc-hb04) does not verify one, so this is off by default
-  # and should be validated against a real packet capture before enabling.
+  # Optional: drop incoming 8-byte reports whose XOR checksum does not match.
+  # The reference driver (LinuxCNC xhc-hb04) does not verify one, so this is
+  # off by default and should be validated against a real packet capture
+  # before enabling. 6-byte KTURT reports carry no checksum and are never
+  # dropped.
   verify_checksum: false
 
 planetcnc:
@@ -19,9 +20,9 @@ planetcnc:
   attach: false
 
 jogging:
-  step_sizes: [0.001, 0.01, 0.1, 1.0]   # mm (stepsize sequence x 0.001)
+  step_sizes: [0.001, 0.01, 0.1, 1.0]   # mm per wheel click; `step_size` button cycles
+  default_step_index: 1                 # index into step_sizes at start-up (0.01)
   max_speed: 1000.0                     # mm/min (speed of position-following)
-  mode: "step"                          # step | continuous (unused by wheel)
   override_step: 10.0                   # percent per wheel click for override
   feed_override_param: "_ovrd_speedfeed"
   spindle_override_param: "_ovrd_spindle"
@@ -44,8 +45,10 @@ logging:
 #   home_all, set_work_zero, set_work_zero_xy, set_work_zero_z,
 #   spindle_toggle, flood_toggle, mist_toggle,
 #   feed_override, spindle_override (use `delta` in percent),
-#   toggle_jog_mode, command (named TNG command in `cmd`), gcode (`cmd`),
-#   noop
+#   step_size (cycle jogging.step_sizes), command (named TNG command in `cmd`),
+#   gcode (`cmd`), noop
+# Unknown button or action names are a config error. Without this section the
+# built-in defaults below (minus the noop entries) are used.
 buttons:
   reset:        { action: "estop" }
   stop:         { action: "stop" }
@@ -61,7 +64,7 @@ buttons:
   macro_1:      { action: "noop" }
   macro_2:      { action: "noop" }
   spindle:      { action: "spindle_toggle" }
-  step:         { action: "toggle_jog_mode" }
-  mode:         { action: "toggle_jog_mode" }
+  step:         { action: "step_size" }
+  mode:         { action: "noop" }
   macro_6:      { action: "noop" }
   macro_7:      { action: "noop" }

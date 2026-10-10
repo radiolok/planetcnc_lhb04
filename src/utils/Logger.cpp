@@ -16,8 +16,16 @@ namespace {
 std::shared_ptr<spdlog::logger> g_logger;
 }
 
-void Logger::init(const std::string& level, const std::string& file) {
+bool Logger::init(const std::string& level, const std::string& file,
+                  std::string& error) {
+    error.clear();
+    // spdlog::level::from_str() maps any unknown string to "off", which would
+    // silently disable logging.
     spdlog::level::level_enum lvl = spdlog::level::from_str(level);
+    if (lvl == spdlog::level::off && level != "off") {
+        error = "unknown log level '" + level + "'; using info";
+        lvl = spdlog::level::info;
+    }
     std::vector<spdlog::sink_ptr> sinks;
 
     auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
@@ -25,9 +33,15 @@ void Logger::init(const std::string& level, const std::string& file) {
     sinks.push_back(console);
 
     if (!file.empty()) {
-        auto fsink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file, true);
-        fsink->set_level(lvl);
-        sinks.push_back(fsink);
+        try {
+            auto fsink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file, true);
+            fsink->set_level(lvl);
+            sinks.push_back(fsink);
+        } catch (const std::exception& e) {
+            if (!error.empty()) error += "; ";
+            error += "cannot open log file '" + file + "' (" + e.what() +
+                     "); logging to console only";
+        }
     }
 
     g_logger = std::make_shared<spdlog::logger>("mpgd", sinks.begin(), sinks.end());
@@ -35,6 +49,7 @@ void Logger::init(const std::string& level, const std::string& file) {
     g_logger->flush_on(spdlog::level::warn);
     spdlog::flush_every(std::chrono::seconds(1));
     spdlog::set_default_logger(g_logger);
+    return error.empty();
 }
 
 void Logger::shutdown() {

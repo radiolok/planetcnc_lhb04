@@ -69,7 +69,7 @@ public:
 
     // --- Parameters --------------------------------------------------------
     bool setParam(const std::string& name, double value) override;
-    double getParam(const std::string& name) override;
+    std::optional<double> getParam(const std::string& name) override;
 
     // --- G-code helpers ----------------------------------------------------
     bool startCode(const std::string& gcode) override;

@@ -1,7 +1,10 @@
 #include "config/ConfigManager.h"
 
+#include "usb/XhcProtocol.h"
+
 #include <yaml-cpp/yaml.h>
 
+#include <filesystem>
 #include <sstream>
 #include <stdexcept>
 
@@ -9,14 +12,24 @@ namespace mpgd {
 
 namespace {
 
-uint16_t parseUint16(const std::string& s) {
-    unsigned long v = std::stoul(s, nullptr, 0);
-    return static_cast<uint16_t>(v);
-}
+constexpr const char* kKnownActions[] = {
+    "estop", "stop", "start", "pause", "pause_toggle", "toggle_start_pause",
+    "home_all", "set_work_zero", "set_work_zero_xy", "set_work_zero_z",
+    "spindle_toggle", "flood_toggle", "mist_toggle",
+    "feed_override", "spindle_override", "step_size",
+    "command", "gcode", "noop",
+};
 
-std::string scalarToString(const YAML::Node& n, const std::string& fallback) {
-    if (!n) return fallback;
-    return n.as<std::string>(fallback);
+constexpr const char* kLogLevels[] = {
+    "trace", "debug", "info", "warn", "error", "critical", "off",
+};
+
+bool isKnownButton(const std::string& name) {
+    if (name == "none") return false;  // buttonName() of an unknown code
+    for (int code = 1; code <= 0xFF; ++code) {
+        if (name == xhc::buttonName(static_cast<uint8_t>(code))) return true;
+    }
+    return false;
 }
 
 void applyLogging(const YAML::Node& n, LoggingConfig& c) {
@@ -43,7 +56,6 @@ void applyDevice(const YAML::Node& n, DeviceConfig& c) {
             c.productIds.push_back(static_cast<uint16_t>(pid.as<unsigned>()));
         }
     }
-    if (n["auto_detect"]) c.autoDetect = n["auto_detect"].as<bool>(c.autoDetect);
     if (n["verify_checksum"]) c.verifyChecksum = n["verify_checksum"].as<bool>(c.verifyChecksum);
 }
 
@@ -60,8 +72,8 @@ void applyJogging(const YAML::Node& n, JoggingConfig& c) {
         c.stepSizes.clear();
         for (const auto& s : n["step_sizes"]) c.stepSizes.push_back(s.as<double>());
     }
+    if (n["default_step_index"]) c.defaultStepIndex = n["default_step_index"].as<int>(c.defaultStepIndex);
     if (n["max_speed"]) c.maxSpeed = n["max_speed"].as<double>(c.maxSpeed);
-    if (n["mode"]) c.mode = n["mode"].as<std::string>(c.mode);
     if (n["override_step"]) c.overrideStep = n["override_step"].as<double>(c.overrideStep);
     if (n["feed_override_param"]) c.feedOverrideParam = n["feed_override_param"].as<std::string>(c.feedOverrideParam);
     if (n["spindle_override_param"]) c.spindleOverrideParam = n["spindle_override_param"].as<std::string>(c.spindleOverrideParam);
@@ -70,6 +82,8 @@ void applyJogging(const YAML::Node& n, JoggingConfig& c) {
 
 void applyButtons(const YAML::Node& n, Config& c) {
     if (!n) return;
+    // An explicit `buttons` section replaces the built-in bindings.
+    c.buttons.clear();
     for (const auto& entry : n) {
         std::string name = entry.first.as<std::string>();
         const YAML::Node& b = entry.second;
@@ -78,12 +92,95 @@ void applyButtons(const YAML::Node& n, Config& c) {
         if (b["cmd"]) a.command = b["cmd"].as<std::string>();
         else if (b["command"]) a.command = b["command"].as<std::string>();
         if (b["delta"]) a.delta = b["delta"].as<double>();
-        if (b["value"]) a.value = b["value"].as<double>();
         c.buttons.emplace_back(std::move(name), std::move(a));
     }
 }
 
 } // namespace
+
+std::vector<std::pair<std::string, ButtonAction>> Config::defaultButtons() {
+    auto bind = [](const char* action, const char* cmd = "") {
+        ButtonAction a;
+        a.action = action;
+        a.command = cmd;
+        return a;
+    };
+    // Keep in sync with config/mpgd.yaml.
+    return {
+        {"reset",       bind("estop")},
+        {"stop",        bind("stop")},
+        {"start_pause", bind("toggle_start_pause")},
+        {"probe_z",     bind("command", "Machine.Work_Position.Measure_Height")},
+        {"zero",        bind("set_work_zero")},
+        {"home",        bind("home_all")},
+        {"spindle",     bind("spindle_toggle")},
+        {"step",        bind("step_size")},
+    };
+}
+
+bool ConfigManager::isKnownAction(const std::string& action) {
+    for (const char* a : kKnownActions) {
+        if (action == a) return true;
+    }
+    return false;
+}
+
+bool ConfigManager::validate(const Config& cfg, std::string& error) {
+    std::vector<std::string> problems;
+    auto bad = [&](const std::string& msg) { problems.push_back(msg); };
+
+    if (cfg.device.productIds.empty()) bad("device.product_ids is empty");
+
+    const auto& j = cfg.jogging;
+    if (j.stepSizes.empty()) bad("jogging.step_sizes is empty");
+    for (double s : j.stepSizes) {
+        if (!(s > 0.0)) {
+            bad("jogging.step_sizes: every step must be > 0");
+            break;
+        }
+    }
+    if (j.defaultStepIndex < 0 ||
+        j.defaultStepIndex >= static_cast<int>(j.stepSizes.size())) {
+        bad("jogging.default_step_index is outside jogging.step_sizes");
+    }
+    if (!(j.maxSpeed > 0.0)) bad("jogging.max_speed must be > 0");
+    if (!(j.jogSpeed > 0.0)) bad("jogging.jog_speed must be > 0");
+    if (!(j.overrideStep > 0.0)) bad("jogging.override_step must be > 0");
+    if (j.feedOverrideParam.empty()) bad("jogging.feed_override_param is empty");
+    if (j.spindleOverrideParam.empty()) bad("jogging.spindle_override_param is empty");
+
+    // Poll periods are 1000 / hz ms; above 1000 Hz the period would be 0 ms
+    // and the thread would spin at full CPU.
+    const auto& p = cfg.polling;
+    if (p.usbHz < 1 || p.usbHz > 1000) bad("polling.usb_hz must be 1..1000");
+    if (p.displayHz < 1 || p.displayHz > 1000) bad("polling.display_hz must be 1..1000");
+    if (p.reconnectMs <= 0) bad("polling.reconnect_ms must be > 0");
+    if (p.buttonDebounceMs < 0) bad("polling.button_debounce_ms must be >= 0");
+
+    bool levelOk = false;
+    for (const char* l : kLogLevels) {
+        if (cfg.logging.level == l) levelOk = true;
+    }
+    if (!levelOk) bad("logging.level '" + cfg.logging.level + "' is not a known level");
+
+    for (const auto& [name, a] : cfg.buttons) {
+        if (!isKnownButton(name)) bad("buttons: unknown button '" + name + "'");
+        if (!isKnownAction(a.action)) {
+            bad("buttons." + name + ": unknown action '" + a.action + "'");
+        } else if ((a.action == "command" || a.action == "gcode") &&
+                   a.command.empty()) {
+            bad("buttons." + name + ": action '" + a.action + "' needs `cmd`");
+        }
+    }
+
+    if (problems.empty()) return true;
+    error.clear();
+    for (const auto& msg : problems) {
+        if (!error.empty()) error += "\n";
+        error += msg;
+    }
+    return false;
+}
 
 bool ConfigManager::load(const std::string& path, Config& out, std::string& error) {
     try {
@@ -99,22 +196,23 @@ bool ConfigManager::load(const std::string& path, Config& out, std::string& erro
         applyPolling(root["polling"], out.polling);
         applyLogging(root["logging"], out.logging);
         applyButtons(root["buttons"], out);
-        return true;
     } catch (const std::exception& e) {
         error = e.what();
         return false;
     }
+    return validate(out, error);
 }
 
-Config ConfigManager::loadOrDefault(const std::string& path, std::string& error) {
-    Config cfg;
-    if (path.empty()) return cfg;
-    if (!load(path, cfg, error)) {
-        // Keep the error for logging, but fall back to defaults so the daemon
-        // can still start.
-        return Config{};
+bool ConfigManager::loadOrDefault(const std::string& path, Config& out,
+                                  std::string& error, bool& missing) {
+    out = Config{};
+    missing = false;
+    std::error_code ec;
+    if (path.empty() || !std::filesystem::exists(path, ec)) {
+        missing = true;
+        return true;
     }
-    return cfg;
+    return load(path, out, error);
 }
 
 const ButtonAction* ConfigManager::findAction(const Config& cfg,

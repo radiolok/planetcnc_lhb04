@@ -8,7 +8,16 @@
 namespace mpgd {
 
 ButtonHandler::ButtonHandler(ITngApi& api, SharedState& state, const Config& cfg)
-    : api_(api), state_(state), cfg_(cfg) {}
+    : api_(api), state_(state), cfg_(cfg) {
+    const auto& steps = cfg_.jogging.stepSizes;
+    if (!steps.empty()) {
+        const int last = static_cast<int>(steps.size()) - 1;
+        const int idx = std::clamp(cfg_.jogging.defaultStepIndex, 0, last);
+        std::lock_guard<std::mutex> lk(state_.mutex);
+        state_.stepSizeIndex = idx;
+        state_.stepSize = steps[static_cast<size_t>(idx)];
+    }
+}
 
 bool ButtonHandler::onPress(const std::string& buttonName) {
     const ButtonAction* action = ConfigManager::findAction(cfg_, buttonName);
@@ -71,23 +80,27 @@ bool ButtonHandler::dispatch(const ButtonAction& a) {
     if (action == "mist_toggle") {
         return execNamedCommand("Machine.Mist");
     }
-    if (action == "feed_override") {
-        double current = api_.getParam(cfg_.jogging.feedOverrideParam);
-        double value = std::clamp(current + a.delta / 100.0, 0.0, 2.5);
-        return api_.setParam(cfg_.jogging.feedOverrideParam, value);
+    if (action == "feed_override" || action == "spindle_override") {
+        const std::string& param = (action == "feed_override")
+                                       ? cfg_.jogging.feedOverrideParam
+                                       : cfg_.jogging.spindleOverrideParam;
+        const std::optional<double> current = api_.getParam(param);
+        if (!current) {
+            logWarn("button: GetParam(%s) failed; override unchanged",
+                    param.c_str());
+            return false;
+        }
+        double value = std::clamp(*current + a.delta / 100.0, 0.0, 2.5);
+        return api_.setParam(param, value);
     }
-    if (action == "spindle_override") {
-        double current = api_.getParam(cfg_.jogging.spindleOverrideParam);
-        double value = std::clamp(current + a.delta / 100.0, 0.0, 2.5);
-        return api_.setParam(cfg_.jogging.spindleOverrideParam, value);
-    }
-    if (action == "toggle_jog_mode") {
+    if (action == "step_size") {
+        const auto& steps = cfg_.jogging.stepSizes;
+        if (steps.empty()) return false;
         std::lock_guard<std::mutex> lk(state_.mutex);
-        state_.jogMode = (state_.jogMode == JogMode::Step)
-                             ? JogMode::Continuous
-                             : JogMode::Step;
-        logInfo("jog mode: %s",
-                state_.jogMode == JogMode::Step ? "step" : "continuous");
+        state_.stepSizeIndex =
+            (state_.stepSizeIndex + 1) % static_cast<int>(steps.size());
+        state_.stepSize = steps[static_cast<size_t>(state_.stepSizeIndex)];
+        logInfo("jog step size: %.3f mm", state_.stepSize);
         return true;
     }
     if (action == "command") {

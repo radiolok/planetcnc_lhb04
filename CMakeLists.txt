@@ -115,6 +115,12 @@ add_executable(test_display_updater tests/test_display_updater.cpp)
 target_link_libraries(test_display_updater PRIVATE mpgd::core)
 add_test(NAME test_display_updater COMMAND test_display_updater)
 
+add_executable(test_config tests/test_config.cpp)
+target_link_libraries(test_config PRIVATE mpgd::core)
+target_compile_definitions(test_config PRIVATE
+    MPGD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+add_test(NAME test_config COMMAND test_config)
+
 add_executable(test_planetcnc tests/test_planetcnc.cpp)
 target_link_libraries(test_planetcnc PRIVATE mpgd::core)
 add_test(NAME test_planetcnc COMMAND test_planetcnc)

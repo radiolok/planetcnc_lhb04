@@ -32,8 +32,6 @@ bool StateReader::read() {
     state_.machine.running = api_.isRunning();
     state_.machine.paused = api_.isPause();
     state_.machine.initialized = api_.isInitialized();
-
-    state_.estopBlocked = state_.machine.estop;
     return true;
 }
 

@@ -3,6 +3,7 @@
 #include "utils/Logger.h"
 
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <limits>
 
@@ -151,9 +152,12 @@ bool TngApi::load(const std::string& libPath, std::string& error) {
     resolve("SetIdleCB", fnSetIdleCB_, false, error);
     resolve("SetLineNumCB", fnSetLineNumCB_, false, error);
 
+    // `error` only collects exports marked required; mpgd cannot work
+    // without them, so refuse the library instead of failing call by call.
     if (!error.empty()) {
-        logWarn("TNG API: some symbols failed to resolve: %s", error.c_str());
-        error.clear();
+        error = "TNG library is missing required exports: " + error;
+        unload();
+        return false;
     }
 
     // First call: verify the library is actually usable.
@@ -346,10 +350,15 @@ bool TngApi::setParam(const std::string& name, double value) {
     std::lock_guard<std::mutex> lk(mtx_);
     return fnSetParam_(name.c_str(), value);
 }
-double TngApi::getParam(const std::string& name) {
-    if (!fnGetParam_) return 0.0;
+std::optional<double> TngApi::getParam(const std::string& name) {
+    if (!fnGetParam_) return std::nullopt;
+    // Before TNG is initialized GetParam does not return real values.
+    if (!isInitialized()) return std::nullopt;
     std::lock_guard<std::mutex> lk(mtx_);
-    return fnGetParam_(name.c_str());
+    const double v = fnGetParam_(name.c_str());
+    // Unknown parameter names read as NaN.
+    if (std::isnan(v)) return std::nullopt;
+    return v;
 }
 
 // --- G-code helpers --------------------------------------------------------
