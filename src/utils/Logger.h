@@ -19,10 +19,18 @@ public:
     static void shutdown();
 };
 
-void logTrace(const char* fmt, ...);
-void logDebug(const char* fmt, ...);
-void logInfo(const char* fmt, ...);
-void logWarn(const char* fmt, ...);
-void logError(const char* fmt, ...);
+// printf-style helpers. GCC and Clang check the arguments against `fmt`.
+#if defined(__GNUC__) || defined(__clang__)
+#define MPGD_PRINTF_FORMAT(fmtIdx, argIdx) \
+    __attribute__((format(printf, fmtIdx, argIdx)))
+#else
+#define MPGD_PRINTF_FORMAT(fmtIdx, argIdx)
+#endif
+
+void logTrace(const char* fmt, ...) MPGD_PRINTF_FORMAT(1, 2);
+void logDebug(const char* fmt, ...) MPGD_PRINTF_FORMAT(1, 2);
+void logInfo(const char* fmt, ...) MPGD_PRINTF_FORMAT(1, 2);
+void logWarn(const char* fmt, ...) MPGD_PRINTF_FORMAT(1, 2);
+void logError(const char* fmt, ...) MPGD_PRINTF_FORMAT(1, 2);
 
 } // namespace mpgd

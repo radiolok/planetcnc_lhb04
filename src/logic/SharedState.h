@@ -12,6 +12,8 @@ namespace mpgd {
 struct MachineState {
     double workX = 0.0, workY = 0.0, workZ = 0.0;
     double motorX = 0.0, motorY = 0.0, motorZ = 0.0;
+    // A axis. workA is NaN when TNG cannot report a work position for it.
+    double workA = 0.0, motorA = 0.0;
     double feed = 0.0;       // current feed (units/sec, InfoSpeed)
     double spindle = 0.0;    // spindle speed (RPS, InfoSpindle)
     unsigned jogPot = 0;

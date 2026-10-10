@@ -51,12 +51,8 @@ public:
     HidDevice(HidDevice&& other) noexcept;
     HidDevice& operator=(HidDevice&& other) noexcept;
 
-    // Opens the first device matching any of the given (vendorId, productId)
-    // pairs. Returns false when no matching device is present.
-    bool open(uint16_t vendorId, const std::vector<uint16_t>& productIds,
-              std::string& error);
-
-    // Opens a specific device node by its enumeration path.
+    // Opens a specific device node by its enumeration path. Use
+    // enumerateDevices() or openReadWrite() to find the node.
     bool openPath(const std::string& path);
 
     // Closes the device and marks it disconnected.

@@ -27,6 +27,7 @@ jogging:
   feed_override_param: "_ovrd_speedfeed"
   spindle_override_param: "_ovrd_spindle"
   jog_speed: 12.0                       # mm/s; Jog() velocity multiplier (= _jog_speed)
+  max_decel: 200.0                      # mm/s^2; servo braking (<= _motion_maxdec)
 
 polling:
   usb_hz: 100          # USB input poll rate

@@ -12,7 +12,7 @@ DisplayUpdater::DisplayUpdater(ITngApi& api, SharedState& state,
                                const Config& cfg)
     : api_(api), state_(state), cfg_(cfg) {}
 
-bool DisplayUpdater::build(Frame& out) {
+bool DisplayUpdater::build(Frame& out, bool force) {
     const StateSnapshot snap = state_.snapshot();
     const bool axisOff = snap.axisOff();
     const int axis = snap.selectedAxis();
@@ -20,7 +20,7 @@ bool DisplayUpdater::build(Frame& out) {
 
     // FR-04.5: skip display updates while the axis rotary is OFF (unless the
     // operator explicitly wants continuous display traffic).
-    if (axisOff && !cfg_.polling.displayAlways) {
+    if (axisOff && !cfg_.polling.displayAlways && !force) {
         return false;
     }
 
@@ -36,9 +36,11 @@ bool DisplayUpdater::build(Frame& out) {
     usb::DisplayData d;
     // Line 1 shows the selected axis (X or A), matching xhc-hb04.cc.
     if (axis == 3) {
-        // A axis occupies the first line when selected.
-        d.line1 = 0.0;  // A work position is not tracked in v1 (X/Y/Z only)
-        d.machine1 = 0.0;
+        // A axis occupies the first line when selected. Without a work
+        // position for A, show its machine position on both.
+        const double wa = snap.machine.workA;
+        d.machine1 = snap.machine.motorA;
+        d.line1 = std::isfinite(wa) ? wa : d.machine1;
     } else {
         d.line1 = wx;
         d.machine1 = mx;
@@ -50,8 +52,8 @@ bool DisplayUpdater::build(Frame& out) {
 
     d.feedOverride = api_.getParam(cfg_.jogging.feedOverrideParam).value_or(0.0);
     d.spindleOverride = api_.getParam(cfg_.jogging.spindleOverrideParam).value_or(0.0);
-    d.feedValue = api_.infoSpeed();
-    d.spindleRps = api_.infoSpindle();
+    d.feedValue = snap.machine.feed;
+    d.spindleRps = snap.machine.spindle;
     d.stepsize = static_cast<int>(llround(stepSize * 1000.0));
     d.inchIcon = false;
     d.aAxisActive = (axis == 3);

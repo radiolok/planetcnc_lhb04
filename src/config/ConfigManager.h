@@ -6,12 +6,47 @@
 
 namespace mpgd {
 
+// Button actions. The YAML names are resolved once, when the config is
+// built, so a button press dispatches on the enum.
+enum class ActionType {
+    Unknown,            // name not recognised (a config error)
+    EStop,
+    Stop,
+    Start,
+    Pause,
+    PauseToggle,
+    ToggleStartPause,
+    HomeAll,
+    SetWorkZero,
+    SetWorkZeroXY,
+    SetWorkZeroZ,
+    SpindleToggle,
+    FloodToggle,
+    MistToggle,
+    FeedOverride,
+    SpindleOverride,
+    StepSize,
+    Command,
+    GCode,
+    Noop,
+};
+
+// Resolves a YAML action name ("estop", "home_all", ...). Returns
+// ActionType::Unknown for any other name.
+ActionType parseActionType(const std::string& name);
+
 // Single button -> action binding.
 struct ButtonAction {
-    std::string action;              // "estop", "stop", "home_all", ...
+    ActionType type = ActionType::Unknown;
+    std::string name;                // action name as written in the config
     std::string command;             // used by "command"/"gcode" actions
     double delta = 0.0;              // used by override actions (percent)
 };
+
+// Builds a binding from its YAML action name, resolving `type`.
+ButtonAction makeButtonAction(const std::string& name,
+                              const std::string& command = "",
+                              double delta = 0.0);
 
 struct DeviceConfig {
     uint16_t vendorId = 0x10CE;
@@ -40,7 +75,15 @@ struct JoggingConfig {
     // to produce the Jog value. Matches the _jog_speed controller setting
     // (validated on Mk3/4: _jog_speed = 12 -> value 0.5 jogged at 6 mm/s).
     double jogSpeed = 12.0;
+    // Deceleration the jog servo plans its braking distance with (mm/s^2).
+    // Keep it at or below the controller's _motion_maxdec, or the axis
+    // cannot stop within the planned distance and overshoots.
+    double maxDecel = 200.0;
 };
+
+// Valid range of the feed/spindle override parameters (1.0 = 100 %).
+constexpr double kOverrideMin = 0.0;
+constexpr double kOverrideMax = 2.5;
 
 struct PollingConfig {
     int usbHz = 100;                 // poll rate for USB input

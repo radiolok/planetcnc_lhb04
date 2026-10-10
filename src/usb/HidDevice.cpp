@@ -35,30 +35,6 @@ HidDevice& HidDevice::operator=(HidDevice&& other) noexcept {
     return *this;
 }
 
-bool HidDevice::open(uint16_t vendorId, const std::vector<uint16_t>& productIds,
-                     std::string& error) {
-    std::lock_guard<std::mutex> lk(mtx_);
-    closeLocked();
-
-    for (uint16_t pid : productIds) {
-        hid_device_* dev = hid_open(vendorId, pid, nullptr);
-        if (dev) {
-            device_ = dev;
-            wchar_t buf[256] = {0};
-            if (hid_get_manufacturer_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
-                manufacturer_ = utf8FromWide(buf);
-            }
-            if (hid_get_product_string(dev, buf, sizeof(buf) / sizeof(buf[0])) == 0) {
-                product_ = utf8FromWide(buf);
-            }
-            return true;
-        }
-    }
-
-    error = "no XHC LHB04 device found (vid=" + std::to_string(vendorId) + ")";
-    return false;
-}
-
 bool HidDevice::openPath(const std::string& path) {
     std::lock_guard<std::mutex> lk(mtx_);
     closeLocked();

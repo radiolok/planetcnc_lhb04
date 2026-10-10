@@ -49,6 +49,8 @@ public:
     virtual bool infoWorkPosition3(double& x, double& y, double& z) = 0;
     virtual bool infoMotorPosition3(double& x, double& y, double& z) = 0;
     virtual double infoMotorPosition(int axis) = 0;
+    // Work position of one axis (0=X..5=C); NaN when unavailable.
+    virtual double infoWorkPosition(int axis) = 0;
 
     // --- Jog / move --------------------------------------------------------
     virtual bool jog(bool step, double x, double y, double z) = 0;

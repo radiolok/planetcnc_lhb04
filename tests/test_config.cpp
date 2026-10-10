@@ -27,9 +27,9 @@ void test_shipped_config_is_valid() {
     CHECK(ConfigManager::load(MPGD_SOURCE_DIR "/config/mpgd.yaml", cfg, err));
     if (!err.empty()) std::printf("  error: %s\n", err.c_str());
     const ButtonAction* reset = ConfigManager::findAction(cfg, "reset");
-    CHECK(reset && reset->action == "estop");
+    CHECK(reset && reset->type == ActionType::EStop);
     const ButtonAction* step = ConfigManager::findAction(cfg, "step");
-    CHECK(step && step->action == "step_size");
+    CHECK(step && step->type == ActionType::StepSize);
 }
 
 void test_defaults_are_valid_and_bind_estop() {
@@ -37,9 +37,9 @@ void test_defaults_are_valid_and_bind_estop() {
     std::string err;
     CHECK(ConfigManager::validate(cfg, err));
     const ButtonAction* reset = ConfigManager::findAction(cfg, "reset");
-    CHECK(reset && reset->action == "estop");
+    CHECK(reset && reset->type == ActionType::EStop);
     const ButtonAction* stop = ConfigManager::findAction(cfg, "stop");
-    CHECK(stop && stop->action == "stop");
+    CHECK(stop && stop->type == ActionType::Stop);
 }
 
 void test_missing_file_uses_defaults() {
@@ -70,6 +70,7 @@ void test_invalid_values_all_reported() {
         "  jog_hz: 5000\n"
         "jogging:\n"
         "  jog_speed: -1\n"
+        "  max_decel: 0\n"
         "  max_speed: 0\n"
         "  step_sizes: [0.01, 0]\n"
         "logging:\n"
@@ -85,6 +86,7 @@ void test_invalid_values_all_reported() {
     CHECK(contains(err, "display_hz"));
     CHECK(contains(err, "jog_hz"));
     CHECK(contains(err, "jog_speed"));
+    CHECK(contains(err, "max_decel"));
     CHECK(contains(err, "max_speed"));
     CHECK(contains(err, "step_sizes"));
     CHECK(contains(err, "logging.level"));
@@ -127,6 +129,19 @@ void test_default_step_index_out_of_range() {
     CHECK(contains(err, "default_step_index"));
 }
 
+void test_action_names_resolve_to_types() {
+    CHECK(parseActionType("estop") == ActionType::EStop);
+    CHECK(parseActionType("home_all") == ActionType::HomeAll);
+    CHECK(parseActionType("gcode") == ActionType::GCode);
+    CHECK(parseActionType("stahp") == ActionType::Unknown);
+    CHECK(parseActionType("") == ActionType::Unknown);
+
+    const ButtonAction a = makeButtonAction("spindle_override", "", -10.0);
+    CHECK(a.type == ActionType::SpindleOverride);
+    CHECK_EQ(a.name, std::string("spindle_override"));
+    CHECK_NEAR(a.delta, -10.0, 1e-12);
+}
+
 } // namespace
 
 int main() {
@@ -139,5 +154,6 @@ int main() {
     test_buttons_section_replaces_defaults();
     test_no_buttons_section_keeps_defaults();
     test_default_step_index_out_of_range();
+    test_action_names_resolve_to_types();
     return tfw::summary("test_config");
 }
