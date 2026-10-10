@@ -113,8 +113,9 @@ so a full path works without adding the PlanetCNC directory to `PATH`.
 
 - `GetCmdId()` returns **0** for every name (including bogus ones) through the
   named-pipe (attach) interface — named-command buttons may not dispatch there.
-  The `zero` button (`Machine.Work_Position.Offset.To_Zero`) also failed
-  in-process; command-name resolution needs further investigation.
+  The `zero` button originally sent `Machine.Work_Position.Offset.To_Zero`,
+  which only resets an extra offset; fixed to `Machine.Work_Position.To_Zero`
+  (see section 9).
 - `InfoWorkPosition3()` returns **NaN** until the work position is set/homed;
   `InfoMotorPosition3()` / `InfoMotorPosition(n)` read correctly.
 - Soft limits are active (e.g. ~394.4 mm on X during testing) and stop jogging.
@@ -218,3 +219,27 @@ position == commanded target in all cases). A raw sniff of mark-to-mark turns
 Reports arrive every 16 ms without gaps, so the host receives every report;
 the loss happens in the pendant (encoder/firmware) at ~3-4 counts per report
 (~5 rev/s) and cannot be recovered in software.
+
+### Buttons
+
+Sniff of all 18 buttons (selector OFF and with an axis selected - buttons
+report in both): every code matches `XhcProtocol.h`. The icon buttons are
+`goto_zero` (0x01) and `home` (0x09). Only interface `Col01` delivers input
+reports; `Col02` is output-only (LCD feature reports).
+
+| Button | Action | Result |
+|---|---|---|
+| `reset` (0x17) | `estop` toggle | OK - 10/10 presses toggled e-stop in live mode |
+| `stop` (0x16) | `stop` | OK (no visible effect while idle) |
+| `spindle` (0x0C) | `Machine.Spindle` | OK - toggles on/off |
+| `step` (0x0D) | `step_size` | OK - cycles 0.001 / 0.01 / 0.1 / 1.0 |
+| `zero` (0x07) | `set_work_zero` | **Fixed**: was `Machine.Work_Position.Offset.To_Zero` (resets an extra offset - no visible effect); now `Machine.Work_Position.To_Zero` (current position = work zero, all axes). Verified live. |
+| `probe_z` (0x04) | `Machine.Work_Position.Measure_Height` | Command dispatches correctly. With the probe connected Z retracts up and stops/e-stops - the same from the TNG menu: the probe input polarity is inverted in the TNG settings (machine config, not mpgd). |
+| `home` (0x09) | `Machine.Home` | Command dispatches correctly (TNG busy ~50 ms); homing does nothing from the TNG menu either - homing not configured. |
+| `start_pause` (0x02) | `toggle_start_pause` | Not yet tested with a loaded program. |
+| others | `noop` | Logged only. |
+
+The command names match PlanetCNC's own sample
+`Samples/Sub/ProfileExamples/Handwheel.txt`; menu meanings are in
+`Lang/ENG.txt` (`Machine/Work Position/To Zero` vs
+`Machine/Work Position/Offset/To Zero`).

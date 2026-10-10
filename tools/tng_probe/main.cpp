@@ -265,7 +265,7 @@ const std::vector<const char*>& probeCommands() {
         "Machine.Spindle",
         "Machine.Flood",
         "Machine.Mist",
-        "Machine.Work_Position.Offset.To_Zero",
+        "Machine.Work_Position.To_Zero",
         "Machine.Work_Position.Axis_To_Zero.XY",
         "Machine.Work_Position.Axis_To_Zero.Z",
         "Machine.Work_Position.Measure_Height",

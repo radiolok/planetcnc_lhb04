@@ -117,7 +117,8 @@ bool CmdExecVal(int id, double val);
 | `Machine.Home` | хоминг всех осей |
 | `Machine.Spindle` | вкл/выкл шпинделя |
 | `Machine.Flood` / `Machine.Mist` | охлаждение |
-| `Machine.Work_Position.Offset.To_Zero` | обнулить рабочую позицию |
+| `Machine.Work_Position.To_Zero` | текущая позиция = рабочий ноль (все оси) |
+| `Machine.Work_Position.Offset.To_Zero` | сбросить доп. смещение рабочей позиции в 0 (**не** ставит ноль) |
 | `Machine.Work_Position.Axis_To_Zero.XY` | ноль XY |
 | `Machine.Work_Position.Axis_To_Zero.Z` | ноль Z |
 | `Machine.Tool_Offset.Measure_Length` | замер длины инструмента |

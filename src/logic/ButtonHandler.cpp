@@ -56,7 +56,7 @@ bool ButtonHandler::dispatch(const ButtonAction& a) {
         case ActionType::HomeAll:
             return execNamedCommand("Machine.Home");
         case ActionType::SetWorkZero:
-            return execNamedCommand("Machine.Work_Position.Offset.To_Zero");
+            return execNamedCommand("Machine.Work_Position.To_Zero");
         case ActionType::SetWorkZeroXY:
             return execNamedCommand("Machine.Work_Position.Axis_To_Zero.XY");
         case ActionType::SetWorkZeroZ:
