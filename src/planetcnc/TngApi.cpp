@@ -435,12 +435,19 @@ bool TngApi::infoMotorPosition3(double& x, double& y, double& z) {
 }
 double TngApi::infoMotorPosition(int axis) {
     std::lock_guard<std::mutex> lk(mtx_);
-    if (fnInfoMotorPosition_) return fnInfoMotorPosition_(axis);
-    // Fallback: derive X/Y/Z from the 3-axis variant; A/B/C unavailable.
+    if (fnInfoMotorPosition_) {
+        const double v = fnInfoMotorPosition_(axis);
+        if (std::isfinite(v)) return v;
+    }
+    // Fallback: derive X/Y/Z from the 3-axis variant. This also covers the
+    // case where the single-axis export returns NaN while InfoMotorPosition3
+    // reports a valid coordinate. A/B/C are unavailable through the 3-axis
+    // variant, so those return NaN when the single-axis export also fails.
     if (axis < 3 && fnInfoMotorPosition3_) {
         double x = 0.0, y = 0.0, z = 0.0;
         if (fnInfoMotorPosition3_(&x, &y, &z)) {
-            return axis == 0 ? x : (axis == 1 ? y : z);
+            const double v = axis == 0 ? x : (axis == 1 ? y : z);
+            if (std::isfinite(v)) return v;
         }
     }
     return std::numeric_limits<double>::quiet_NaN();

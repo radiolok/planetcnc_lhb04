@@ -113,8 +113,9 @@ so a full path works without adding the PlanetCNC directory to `PATH`.
 
 - `GetCmdId()` returns **0** for every name (including bogus ones) through the
   named-pipe (attach) interface — named-command buttons may not dispatch there.
-  The `zero` button (`Machine.Work_Position.Offset.To_Zero`) also failed
-  in-process; command-name resolution needs further investigation.
+  The `zero` button originally sent `Machine.Work_Position.Offset.To_Zero`,
+  which only resets an extra offset; fixed to `Machine.Work_Position.To_Zero`
+  (see section 9).
 - `InfoWorkPosition3()` returns **NaN** until the work position is set/homed;
   `InfoMotorPosition3()` / `InfoMotorPosition(n)` read correctly.
 - Soft limits are active (e.g. ~394.4 mm on X during testing) and stop jogging.
@@ -125,26 +126,120 @@ so a full path works without adding the PlanetCNC directory to `PATH`.
 
 ---
 
-## 8. Wheel = position-following (final approach)
+## 8. Wheel = MoveAxis position-following (final approach)
 
-The pendant wheel drives a **velocity servo** in `JogController`:
+The pendant wheel drives a **position-following** controller in `JogController`
+using `MoveAxis`:
 
-1. The wheel accumulates a target coordinate (motor coords), initialized lazily
-   from `InfoMotorPosition(axis)`.
-2. Servo velocity = `min(gain·error, sqrt(2·decel·|error|))`, capped at
-   `max_speed`, signed.
-3. The velocity is divided by `jog_speed` (12) before being passed to
-   `Jog(false, ...)` (see §1).
-4. Hysteresis: stop when `|error| < 0.05 mm`, re-engage only above 0.15 mm.
-5. `Jog()` is re-issued only when the velocity changes by >1 mm/s.
+1. The wheel accumulates a target motor coordinate, initialized lazily from
+   `InfoMotorPosition(axis)`.
+2. `MoveAxis(speed, axis, target)` moves the axis to the target with clean
+   accel/decel and lands exactly (no `_jog_round` quantization, no overshoot).
+3. Speed is the configured `max_speed` (mm/min); `MoveAxis` speed scale is
+   mm/min = value / 10, so `max_speed * 10` is passed.
+4. `MoveAxis` is re-issued only when the target has moved since the last
+   command (a single wheel click always moves the axis) and no more often than
+   20 ms, so a continuous spin extends one smooth move instead of re-planning
+   on every 10 ms tick (which caused stop-start jerks). The controller may
+   **reject** a re-issue while a move is in flight (see section 9); the target
+   is then retried on a later tick, never dropped.
+5. A sub-micron arrival epsilon stops the axis exactly on target; there is no
+   hysteresis deadband, so small wheel turns are no longer swallowed.
+6. On settle the **commanded** target becomes the new anchor when the reached
+   position is within 0.01 mm of it, so steps finer than the motor resolution
+   (0.001 mm) accumulate instead of being rounded away. A larger gap (soft
+   limit, external stop) adopts the reached position.
 
-`max_speed` (mm/min) and `jog_speed` (mm/s) are YAML-configurable
-(`config/mpgd.yaml`).
+### Why not the velocity servo / Jog()
+
+The first position-following attempt was a velocity servo that fed the
+desired mm/s into continuous `Jog(false, ...)` (after dividing by `_jog_speed`).
+It was abandoned because:
+
+- A start deadband (0.15 mm) was required to avoid a limit cycle, which made
+  small wheel turns (sub-deadband) be ignored entirely.
+- The proportional gain made medium moves crawl (5 mm/s at 1 mm error) and the
+  controller's own velocity ramp + `_jog_round` rounding caused overshoot at the
+  end of larger moves.
 
 ### Tried and rejected
 
 - **Step mode** (`Jog(step=true)`): instant jumps → lost steps / jerks.
+- **Velocity servo via continuous `Jog()`**: see above (deadband + overshoot).
 - **MoveAxis every tick**: re-planning mid-move → stop-start jerks.
 - **MoveAxis only when idle**: precise but discrete "small steps".
-- **Velocity servo without the ÷jog_speed fix**: axis moved 12× too fast →
-  limit-cycle oscillation (switching axis stopped it, switching back resumed).
+
+---
+
+## 9. Live in-process validation (2026-10-10)
+
+Full in-process run (pendant + Mk3/4 controller, TNG GUI) with jog debug
+logging. Pendant input, LCD, feed/spindle override and buttons worked out of
+the box; the wheel did not move the machine at all.
+
+### `IsRunning` / `IsRun` is not "program running"
+
+`IsRunning` (DLL export `IsRun`) reports that **TNG itself is alive** and is
+always `true` in-process. `JogController` treated it as "program executing" and
+dropped every wheel count; the `toggle_start_pause` button could never call
+`Start()` for the same reason. Captured status flags:
+
+| Phase | IsIdle | IsStop | IsPause | IsRun |
+|---|---|---|---|---|
+| Idle | 1 | 1 | 0 | 1 |
+| Moving (incl. `G4 P3` dwell) | 0 | 0 | 0 | 1 |
+| Paused | 0 | 0 | 1 | 1 |
+
+`IsStop` is the "nothing executing" flag: `running = !IsStop()`. It is false
+for **any** motion, including the wheel's own `MoveAxis`, so it cannot tell a
+program from our jog: it only blocks *starting* a wheel move, and does not
+abort an active one (pause and e-stop still do).
+
+### `MoveAxis` re-issue may be rejected mid-move
+
+Re-issuing `MoveAxis` with an extended target while a move is in flight
+sometimes returns `false` (~30 ms after the previous command). Treating that as
+fatal discarded the accumulated offset. Rejected re-issues are now retried
+(every >= 20 ms); the jog is abandoned only after 500 ms of continuous
+rejection, or if the very first `MoveAxis` fails. In one test session 315
+rejections were all recovered with 0 counts lost.
+
+### Pendant drops counts at high wheel speed
+
+After the fixes, every count that reaches mpgd is applied exactly (settled
+position == commanded target in all cases). A raw sniff of mark-to-mark turns
+(50 counts/revolution):
+
+| Run | CW | CCW | Net |
+|---|---|---|---|
+| Slow, 1 turn each way | +50 | -50 | 0 |
+| Fast, 3 turns each way | +152 | -151 | +1 |
+| Fast, 3 turns each way | +147 | -147 | 0 (3 lost each way) |
+
+Reports arrive every 16 ms without gaps, so the host receives every report;
+the loss happens in the pendant (encoder/firmware) at ~3-4 counts per report
+(~5 rev/s) and cannot be recovered in software.
+
+### Buttons
+
+Sniff of all 18 buttons (selector OFF and with an axis selected - buttons
+report in both): every code matches `XhcProtocol.h`. The icon buttons are
+`goto_zero` (0x01) and `home` (0x09). Only interface `Col01` delivers input
+reports; `Col02` is output-only (LCD feature reports).
+
+| Button | Action | Result |
+|---|---|---|
+| `reset` (0x17) | `estop` toggle | OK - 10/10 presses toggled e-stop in live mode |
+| `stop` (0x16) | `stop` | OK (no visible effect while idle) |
+| `spindle` (0x0C) | `Machine.Spindle` | OK - toggles on/off |
+| `step` (0x0D) | `step_size` | OK - cycles 0.001 / 0.01 / 0.1 / 1.0 |
+| `zero` (0x07) | `set_work_zero` | **Fixed**: was `Machine.Work_Position.Offset.To_Zero` (resets an extra offset - no visible effect); now `Machine.Work_Position.To_Zero` (current position = work zero, all axes). Verified live. |
+| `probe_z` (0x04) | `Machine.Work_Position.Measure_Height` | Command dispatches correctly. With the probe connected Z retracts up and stops/e-stops - the same from the TNG menu: the probe input polarity is inverted in the TNG settings (machine config, not mpgd). |
+| `home` (0x09) | `Machine.Home` | Command dispatches correctly (TNG busy ~50 ms); homing does nothing from the TNG menu either - homing not configured. |
+| `start_pause` (0x02) | `toggle_start_pause` | Not yet tested with a loaded program. |
+| others | `noop` | Logged only. |
+
+The command names match PlanetCNC's own sample
+`Samples/Sub/ProfileExamples/Handwheel.txt`; menu meanings are in
+`Lang/ENG.txt` (`Machine/Work Position/To Zero` vs
+`Machine/Work Position/Offset/To Zero`).

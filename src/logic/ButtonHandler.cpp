@@ -50,12 +50,13 @@ bool ButtonHandler::dispatch(const ButtonAction& a) {
             return api_.pauseToggle();
         case ActionType::ToggleStartPause:
             if (api_.isPause()) return api_.start();
-            if (api_.isIdle() && !api_.isRunning()) return api_.start();
+            // IsStop, not IsRunning: the latter only means "TNG is alive".
+            if (api_.isIdle() && api_.isStop()) return api_.start();
             return api_.pause(true);
         case ActionType::HomeAll:
             return execNamedCommand("Machine.Home");
         case ActionType::SetWorkZero:
-            return execNamedCommand("Machine.Work_Position.Offset.To_Zero");
+            return execNamedCommand("Machine.Work_Position.To_Zero");
         case ActionType::SetWorkZeroXY:
             return execNamedCommand("Machine.Work_Position.Axis_To_Zero.XY");
         case ActionType::SetWorkZeroZ:

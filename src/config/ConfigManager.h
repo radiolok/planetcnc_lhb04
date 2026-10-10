@@ -68,15 +68,13 @@ struct JoggingConfig {
     double overrideStep = 10.0;      // percent per wheel click for override
     std::string feedOverrideParam = "_ovrd_speedfeed";
     std::string spindleOverrideParam = "_ovrd_spindle";
-    // The controller's jog speed (mm/s). PlanetCNC Jog() treats the velocity
-    // argument as a MULTIPLIER of this speed (value * jogSpeed = mm/s, capped
-    // at the controller max speed), so mpgd divides its desired mm/s by this
-    // to produce the Jog value. Matches the _jog_speed controller setting
-    // (validated on Mk3/4: _jog_speed = 12 -> value 0.5 jogged at 6 mm/s).
+    // Parameters of the former Jog() velocity servo. The wheel now follows
+    // positions via MoveAxis (see STAGE3_FINDINGS.md section 8), so these are
+    // parsed and validated but no longer used by JogController.
+    // jogSpeed: the controller's _jog_speed (mm/s); Jog() treats its velocity
+    // argument as a multiplier of it (value * jogSpeed = mm/s).
     double jogSpeed = 12.0;
-    // Deceleration the jog servo plans its braking distance with (mm/s^2).
-    // Keep it at or below the controller's _motion_maxdec, or the axis
-    // cannot stop within the planned distance and overshoots.
+    // maxDecel: servo braking deceleration (mm/s^2, <= _motion_maxdec).
     double maxDecel = 200.0;
 };
 
@@ -87,7 +85,7 @@ constexpr double kOverrideMax = 2.5;
 struct PollingConfig {
     int usbHz = 100;                 // poll rate for USB input
     int displayHz = 20;              // LCD refresh rate
-    int jogHz = 100;                 // jog servo tick rate
+    int jogHz = 100;                 // jog controller tick rate
     int reconnectMs = 2000;          // USB reconnect interval
     int buttonDebounceMs = 50;       // SAFE-04
     bool displayAlways = false;      // keep sending LCD data when axis=OFF

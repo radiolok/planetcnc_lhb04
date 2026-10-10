@@ -50,7 +50,7 @@ public:
     bool isControllerReady() override;
     bool isIdle() override;
     bool isEStop() override;
-    bool isStop();
+    bool isStop() override;
     bool isPause() override;
 
     // --- Machine commands --------------------------------------------------
