@@ -16,7 +16,9 @@
 #include <hidapi.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -149,6 +151,10 @@ int main(int argc, char** argv) {
 
     mpgd::SharedState state;
 
+    // Install Ctrl+C / SIGTERM handlers before the (up to 30 s) TNG start-up
+    // wait so an early interrupt is honored.
+    mpgd::Daemon::installSignalHandlers(state.shutdown);
+
     // --- TNG API (unless sniffing) ----------------------------------------
     mpgd::TngApi api;
     std::thread tngThread;
@@ -188,7 +194,9 @@ int main(int argc, char** argv) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 waited += 100;
             }
-            if (api.isInitialized()) {
+            if (state.shutdown.load()) {
+                mpgd::logInfo("shutdown requested during TNG start-up");
+            } else if (api.isInitialized()) {
                 mpgd::logInfo("TNG initialized");
                 // Enable axis motors (M10 P1): PlanetCNC jog returns ok but
                 // does not move the axes while the motor enable signal is off.
@@ -219,8 +227,6 @@ int main(int argc, char** argv) {
     mpgd::DisplayThread displayThread(state, writeDevice, displayUpdater,
                                       stateReader, displayPeriodMs);
 
-    mpgd::Daemon::installSignalHandlers(state.shutdown);
-
     // --- Start threads -----------------------------------------------------
     std::vector<std::thread> threads;
     threads.emplace_back([&] { usbThread.run(); });
@@ -235,7 +241,8 @@ int main(int argc, char** argv) {
     // --- Graceful shutdown --------------------------------------------------
     mpgd::logInfo("shutting down...");
     state.shutdown.store(true);
-    jogController.stopNow();
+    // JogThread::run() calls jogController.stopNow() itself on exit; calling
+    // it here as well would race with a tick() still running on that thread.
 
     for (auto& t : threads) {
         if (t.joinable()) t.join();
@@ -250,8 +257,19 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         if (tngThread.joinable()) {
-            if (tngExited.load()) tngThread.join();
-            else tngThread.detach();
+            if (tngExited.load()) {
+                tngThread.join();
+            } else {
+                // The TNG thread is still executing inside the vendor library
+                // and references `api`. Returning from main would run
+                // ~TngApi (which unloads the library under that thread) and
+                // destroy the objects it captured. Terminate the process
+                // without running destructors instead.
+                mpgd::logWarn("TNG did not exit within 5s; forcing process exit");
+                mpgd::Logger::shutdown();
+                hid_exit();
+                std::quick_exit(0);
+            }
         }
     }
 

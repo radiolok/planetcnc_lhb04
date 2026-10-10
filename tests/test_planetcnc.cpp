@@ -7,6 +7,7 @@
 #include "planetcnc/ITngApi.h"
 #include "planetcnc/StateReader.h"
 
+#include <limits>
 #include <map>
 #include <string>
 #include <utility>
@@ -278,6 +279,165 @@ static void test_servo_hysteresis() {
     CHECK_EQ(api.jogStops, 1);
 }
 
+static void test_servo_no_drive_back_after_external_move() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(5);
+    jc.tick();  // engage toward 5
+    api.motorX = 5.0;
+    jc.tick();  // reached -> stop
+    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_EQ(api.jogStops, 1);
+
+    // Something else (Home, G-code, TNG GUI) moves the axis far away.
+    api.motorX = -100.0;
+    for (int i = 0; i < 5; ++i) jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);  // must not servo back to 5
+
+    // Next wheel click jogs relative to the new position.
+    state.pendant.jogCounts.store(1);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 2u);
+    CHECK(api.jogs[1].x > 0.0);
+    CHECK(api.jogs[1].x < 6.0);  // error 1 (not 106)
+}
+
+static void test_servo_target_reset_by_external_motion() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 0.1;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(1);  // target 0.1, below start deadband
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 0u);
+
+    // Machine busy with motion that is not ours: pending target dropped.
+    state.machine.idle = false;
+    api.motorX = 50.0;
+    jc.tick();
+    state.machine.idle = true;
+
+    state.pendant.jogCounts.store(1);  // 50 + 0.1: still below deadband
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 0u);
+}
+
+static void test_servo_target_reset_after_estop() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    state.machine.estop = true;
+    api.motorX = 2.0;
+    jc.tick();
+    CHECK_EQ(api.jogStops, 1);
+
+    state.machine.estop = false;  // e-stop released
+    for (int i = 0; i < 5; ++i) jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);  // does not resume toward the old target
+}
+
+static void test_servo_stops_on_position_read_failure() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    api.motorX = std::numeric_limits<double>::quiet_NaN();
+    jc.tick();
+    CHECK_EQ(api.jogStops, 1);
+
+    api.motorX = 1.0;  // read recovers: stale target must not be resumed
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+}
+
+static void test_servo_stops_on_jog_failure() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(5);
+    jc.tick();  // vel 25
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    api.jogResult = false;
+    api.motorX = 4.0;  // vel 5: re-issue fails
+    jc.tick();
+    CHECK_EQ(api.jogStops, 1);
+}
+
+static void test_servo_blocked_while_program_runs() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    state.machine.running = true;
+    jc.tick();
+    CHECK_EQ(api.jogStops, 1);
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+
+    state.machine.running = false;
+    state.machine.paused = true;
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.jogs.size(), 1u);
+}
+
+static void test_override_allowed_while_program_runs() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    state.machine.running = true;
+    state.machine.idle = false;
+    state.pendant.axisCode = xhc::kAxisFeed;
+    api.params[cfg.feedOverrideParam] = 1.0;
+    state.pendant.jogCounts.store(1);
+
+    JogController jc(api, state, cfg);
+    jc.tick();
+    CHECK_EQ(api.setParams.size(), 1u);
+}
+
 static void test_servo_jogspeed_division() {
     MockTngApi api;
     SharedState state;
@@ -529,6 +689,7 @@ static void test_state_reader_reads_all_fields() {
     api.controllerReady = true;
     api.idle = false;
     api.running = true;
+    api.paused = true;
     SharedState state;
     StateReader sr(api, state);
 
@@ -544,6 +705,7 @@ static void test_state_reader_reads_all_fields() {
     CHECK(state.machine.controllerReady);
     CHECK(!state.machine.idle);
     CHECK(state.machine.running);
+    CHECK(state.machine.paused);
     CHECK(state.machine.initialized);
     CHECK(!state.estopBlocked);
 }
@@ -641,6 +803,13 @@ int main() {
     test_servo_no_reissue_similar_velocity();
     test_servo_blocked_by_estop();
     test_servo_disabled_in_attach_mode();
+    test_servo_no_drive_back_after_external_move();
+    test_servo_target_reset_by_external_motion();
+    test_servo_target_reset_after_estop();
+    test_servo_stops_on_position_read_failure();
+    test_servo_stops_on_jog_failure();
+    test_servo_blocked_while_program_runs();
+    test_override_allowed_while_program_runs();
     test_override_feed();
     test_override_spindle_clamped();
 
