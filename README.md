@@ -87,6 +87,7 @@ cmake --build build --config Release
 
 ```bash
 # Linux (GCC/Clang)
+sudo apt-get install libusb-1.0-0-dev   # и libudev-dev для бэкенда hidraw
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
@@ -102,10 +103,38 @@ cmake --build build --config Release --target mpg_gui
 cmake --build build --config Release --target tng_probe
 ```
 
+`mpg_gui` использует бэкенды ImGui для Win32 и OpenGL3, поэтому собирается
+только на Windows.
+
+### Опции CMake
+
+| Опция | По умолчанию | Назначение |
+|---|---|---|
+| `BUILD_TESTING` | `ON` | unit-тесты |
+| `MPGD_BUILD_TOOLS` | `ON` | утилиты `tng_probe` и `mpg_gui` |
+| `MPGD_BUILD_GUI` | `ON` на Windows | `mpg_gui` (только Windows) |
+| `MPGD_HIDAPI_BACKEND` | `libusb` | бэкенд hidapi на Linux: `libusb` или `hidraw` |
+| `MPGD_USE_SYSTEM_HIDAPI` | `OFF` | взять установленный hidapi вместо скачивания |
+| `MPGD_WARNINGS_AS_ERRORS` | `OFF` | предупреждения компилятора как ошибки (включено в CI) |
+| `MPGD_SANITIZERS` | пусто | санитайзеры GCC/Clang, например `address,undefined` или `thread` |
+
 ### Запуск тестов
 
 ```powershell
 ctest --test-dir build -C Release --output-on-failure
+```
+
+### CI и стиль кода
+
+GitHub Actions (`.github/workflows/ci.yml`) собирает проект на Linux (GCC,
+Clang, ASan+UBSan, TSan, бэкенд hidraw) и Windows (MSVC) с
+предупреждениями как ошибками и запускает тесты. Отдельная задача проверяет
+форматирование (`.clang-format`) и `clang-tidy` (`.clang-tidy`) версии 18:
+
+```bash
+git ls-files 'src/*.cpp' 'src/*.h' 'tests/*.cpp' 'tests/*.h' 'tools/*.cpp' | xargs clang-format-18 -i
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+run-clang-tidy-18 -p build "$PWD/(src|tests|tools/tng_probe)/.*\.cpp$"
 ```
 
 ---

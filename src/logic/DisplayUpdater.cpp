@@ -8,8 +8,7 @@
 
 namespace mpgd {
 
-DisplayUpdater::DisplayUpdater(ITngApi& api, SharedState& state,
-                               const Config& cfg)
+DisplayUpdater::DisplayUpdater(ITngApi& api, SharedState& state, const Config& cfg)
     : api_(api), state_(state), cfg_(cfg) {}
 
 bool DisplayUpdater::build(Frame& out, bool force) {

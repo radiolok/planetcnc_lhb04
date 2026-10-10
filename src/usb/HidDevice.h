@@ -25,16 +25,16 @@ struct HidDeviceInfo {
 };
 
 // Enumerates all HID nodes matching any of the given (vendorId, productId).
-std::vector<HidDeviceInfo> enumerateDevices(
-    uint16_t vendorId, const std::vector<uint16_t>& productIds);
+std::vector<HidDeviceInfo> enumerateDevices(uint16_t vendorId,
+                                            const std::vector<uint16_t>& productIds);
 
 // Opens the pendant's read (input) and write (display) HID collections. On
 // Windows the input report (0x04) and the LCD feature report (0x06) live in
 // separate device nodes, so each node is probed with a feature-report write
 // to find the write-capable one. On Linux/macOS a single node may serve both.
 // Returns false with `error` set when no matching device can be opened.
-bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds,
-                   HidDevice& readDev, HidDevice& writeDev, std::string& error);
+bool openReadWrite(uint16_t vendorId, const std::vector<uint16_t>& productIds, HidDevice& readDev,
+                   HidDevice& writeDev, std::string& error);
 
 // Thin RAII wrapper around hidapi. Owns one open HID device.
 //

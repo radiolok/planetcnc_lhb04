@@ -6,9 +6,9 @@
 #include <thread>
 
 #if defined(_WIN32)
-#  include <windows.h>
+#include <windows.h>
 #else
-#  include <csignal>
+#include <csignal>
 #endif
 
 namespace mpgd {
@@ -19,8 +19,8 @@ std::atomic<bool>* g_shutdown = nullptr;
 
 #if defined(_WIN32)
 BOOL WINAPI ctrlHandler(DWORD type) {
-    if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT ||
-        type == CTRL_CLOSE_EVENT || type == CTRL_SHUTDOWN_EVENT) {
+    if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT || type == CTRL_CLOSE_EVENT ||
+        type == CTRL_SHUTDOWN_EVENT) {
         if (g_shutdown) g_shutdown->store(true);
         return TRUE;
     }

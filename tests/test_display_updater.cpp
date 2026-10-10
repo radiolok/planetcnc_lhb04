@@ -8,7 +8,7 @@ using namespace mpgd;
 using namespace mpgd::usb;
 
 static uint16_t readLE16(const uint8_t* p) {
-    return static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
 }
 
 static void test_encode_coordinate_positive() {
@@ -108,13 +108,13 @@ static void test_build_display_payload() {
 }
 
 static void test_build_display_stepsizes() {
-    struct Case { int step; uint8_t code; };
-    Case cases[] = {{1, xhc::kStepDisplay1},
-                    {5, xhc::kStepDisplay5},
-                    {10, xhc::kStepDisplay10},
-                    {100, xhc::kStepDisplay100},
-                    {1000, xhc::kStepDisplay1000},
-                    {7, xhc::kStepDisplay0}}; // unsupported -> 0
+    struct Case {
+        int step;
+        uint8_t code;
+    };
+    Case cases[] = {{1, xhc::kStepDisplay1},       {5, xhc::kStepDisplay5},
+                    {10, xhc::kStepDisplay10},     {100, xhc::kStepDisplay100},
+                    {1000, xhc::kStepDisplay1000}, {7, xhc::kStepDisplay0}}; // unsupported -> 0
     for (const auto& c : cases) {
         DisplayData d;
         d.stepsize = c.step;

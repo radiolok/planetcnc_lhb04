@@ -55,11 +55,16 @@ struct StateSnapshot {
     // rotary is not on an axis position.
     int selectedAxis() const {
         switch (axisCode) {
-            case xhc::kAxisX: return 0;
-            case xhc::kAxisY: return 1;
-            case xhc::kAxisZ: return 2;
-            case xhc::kAxisA: return 3;
-            default: return -1;
+            case xhc::kAxisX:
+                return 0;
+            case xhc::kAxisY:
+                return 1;
+            case xhc::kAxisZ:
+                return 2;
+            case xhc::kAxisA:
+                return 3;
+            default:
+                return -1;
         }
     }
 

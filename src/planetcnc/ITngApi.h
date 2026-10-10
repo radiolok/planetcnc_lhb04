@@ -12,7 +12,12 @@ namespace mpgd {
 // declared here.
 class ITngApi {
 public:
+    ITngApi() = default;
     virtual ~ITngApi() = default;
+    ITngApi(const ITngApi&) = delete;
+    ITngApi& operator=(const ITngApi&) = delete;
+    ITngApi(ITngApi&&) = delete;
+    ITngApi& operator=(ITngApi&&) = delete;
 
     // --- Run status --------------------------------------------------------
     virtual bool isRunning() = 0;
@@ -54,8 +59,7 @@ public:
 
     // --- Jog / move --------------------------------------------------------
     virtual bool jog(bool step, double x, double y, double z) = 0;
-    virtual bool jog9(bool step, double x, double y, double z,
-                      double a, double b, double c,
+    virtual bool jog9(bool step, double x, double y, double z, double a, double b, double c,
                       double u, double v, double w) = 0;
     virtual bool jogStop() = 0;
     // Move a single axis to an absolute motor position at `speed`

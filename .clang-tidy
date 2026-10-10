@@ -1,0 +1,25 @@
+# Enforced in CI (see .github/workflows/ci.yml). Every enabled check is an
+# error. The disabled cppcoreguidelines checks flag patterns this code uses on
+# purpose: printf-style logging, fixed-size HID report buffers indexed by
+# protocol offsets, reference members for injected dependencies, and the
+# do/while(0) macros of the test harness.
+Checks: >
+  -*,
+  bugprone-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-prefer-member-initializer,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-vararg
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(src|tests|tools)/.*'

@@ -14,9 +14,8 @@ class HidDevice;
 // Periodic machine-state refresh and LCD update thread (polling.display_hz).
 class DisplayThread {
 public:
-    DisplayThread(SharedState& state, usb::HidDevice& device,
-                  DisplayUpdater& updater, StateReader& stateReader,
-                  int periodMs);
+    DisplayThread(SharedState& state, usb::HidDevice& device, DisplayUpdater& updater,
+                  StateReader& stateReader, int periodMs);
 
     // Blocking loop until SharedState::shutdown is set.
     void run();

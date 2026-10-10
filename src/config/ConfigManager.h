@@ -44,8 +44,7 @@ struct ButtonAction {
 };
 
 // Builds a binding from its YAML action name, resolving `type`.
-ButtonAction makeButtonAction(const std::string& name,
-                              const std::string& command = "",
+ButtonAction makeButtonAction(const std::string& name, const std::string& command = "",
                               double delta = 0.0);
 
 struct DeviceConfig {
@@ -123,8 +122,8 @@ public:
     // Loads defaults and overlays the file. A missing file is not an error:
     // the defaults are kept and `missing` is set. Any other problem (parse
     // error, invalid value) returns false; the caller must not start.
-    static bool loadOrDefault(const std::string& path, Config& out,
-                              std::string& error, bool& missing);
+    static bool loadOrDefault(const std::string& path, Config& out, std::string& error,
+                              bool& missing);
 
     // Checks every value in `cfg`. Returns false with all problems listed
     // (one per line) in `error`.
@@ -135,8 +134,7 @@ public:
 
     // Looks up the action bound to a canonical button name. Returns nullptr
     // when no action is configured.
-    static const ButtonAction* findAction(const Config& cfg,
-                                          const std::string& buttonName);
+    static const ButtonAction* findAction(const Config& cfg, const std::string& buttonName);
 };
 
 } // namespace mpgd

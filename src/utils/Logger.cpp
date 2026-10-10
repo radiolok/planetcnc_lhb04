@@ -16,8 +16,7 @@ namespace {
 std::shared_ptr<spdlog::logger> g_logger;
 }
 
-bool Logger::init(const std::string& level, const std::string& file,
-                  std::string& error) {
+bool Logger::init(const std::string& level, const std::string& file, std::string& error) {
     error.clear();
     // spdlog::level::from_str() maps any unknown string to "off", which would
     // silently disable logging.
@@ -39,8 +38,8 @@ bool Logger::init(const std::string& level, const std::string& file,
             sinks.push_back(fsink);
         } catch (const std::exception& e) {
             if (!error.empty()) error += "; ";
-            error += "cannot open log file '" + file + "' (" + e.what() +
-                     "); logging to console only";
+            error +=
+                "cannot open log file '" + file + "' (" + e.what() + "); logging to console only";
         }
     }
 
@@ -75,19 +74,34 @@ void vlog(spdlog::level::level_enum lvl, const char* fmt, va_list args) {
 } // namespace
 
 void logTrace(const char* fmt, ...) {
-    va_list a; va_start(a, fmt); vlog(spdlog::level::trace, fmt, a); va_end(a);
+    va_list a;
+    va_start(a, fmt);
+    vlog(spdlog::level::trace, fmt, a);
+    va_end(a);
 }
 void logDebug(const char* fmt, ...) {
-    va_list a; va_start(a, fmt); vlog(spdlog::level::debug, fmt, a); va_end(a);
+    va_list a;
+    va_start(a, fmt);
+    vlog(spdlog::level::debug, fmt, a);
+    va_end(a);
 }
 void logInfo(const char* fmt, ...) {
-    va_list a; va_start(a, fmt); vlog(spdlog::level::info, fmt, a); va_end(a);
+    va_list a;
+    va_start(a, fmt);
+    vlog(spdlog::level::info, fmt, a);
+    va_end(a);
 }
 void logWarn(const char* fmt, ...) {
-    va_list a; va_start(a, fmt); vlog(spdlog::level::warn, fmt, a); va_end(a);
+    va_list a;
+    va_start(a, fmt);
+    vlog(spdlog::level::warn, fmt, a);
+    va_end(a);
 }
 void logError(const char* fmt, ...) {
-    va_list a; va_start(a, fmt); vlog(spdlog::level::err, fmt, a); va_end(a);
+    va_list a;
+    va_start(a, fmt);
+    vlog(spdlog::level::err, fmt, a);
+    va_end(a);
 }
 
 } // namespace mpgd

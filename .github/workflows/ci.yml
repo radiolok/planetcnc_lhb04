@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC
+            cc: gcc
+            cxx: g++
+            build_type: Release
+            cmake_args: ""
+          - name: Clang
+            cc: clang-18
+            cxx: clang++-18
+            build_type: Release
+            cmake_args: ""
+          - name: ASan+UBSan
+            cc: gcc
+            cxx: g++
+            build_type: Debug
+            cmake_args: -DMPGD_SANITIZERS=address,undefined
+          - name: TSan
+            cc: gcc
+            cxx: g++
+            build_type: Debug
+            cmake_args: -DMPGD_SANITIZERS=thread
+          - name: hidraw backend
+            cc: gcc
+            cxx: g++
+            build_type: Release
+            cmake_args: -DMPGD_HIDAPI_BACKEND=hidraw
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev libudev-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DMPGD_WARNINGS_AS_ERRORS=ON
+          ${{ matrix.cmake_args }}
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          # The runner kernel's mmap randomization is wider than TSan supports.
+          if [ "${{ matrix.name }}" = "TSan" ]; then sudo sysctl vm.mmap_rnd_bits=28; fi
+          ctest --test-dir build --output-on-failure
+
+  windows:
+    name: Windows MSVC
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMPGD_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  lint:
+    name: clang-format and clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev clang-format-18 clang-tidy-18
+      - name: clang-format
+        run: |
+          git ls-files 'src/*.cpp' 'src/*.h' 'tests/*.cpp' 'tests/*.h' 'tools/*.cpp' \
+            | xargs clang-format-18 --dry-run --Werror
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: clang-tidy
+        # Only this project's sources; mpg_gui is Windows-only and not built here.
+        run: run-clang-tidy-18 -p build -quiet "^${GITHUB_WORKSPACE}/(src|tests|tools/tng_probe)/.*\.cpp$"
