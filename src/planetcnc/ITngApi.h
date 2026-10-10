@@ -24,6 +24,7 @@ public:
     virtual bool isInitialized() = 0;
     virtual bool isControllerReady() = 0;
     virtual bool isIdle() = 0;
+    virtual bool isStop() = 0;
     virtual bool isEStop() = 0;
     virtual bool isPause() = 0;
 

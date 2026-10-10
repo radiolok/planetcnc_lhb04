@@ -7,9 +7,11 @@
 #include "planetcnc/ITngApi.h"
 #include "planetcnc/StateReader.h"
 
+#include <chrono>
 #include <limits>
 #include <map>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -23,6 +25,9 @@ namespace {
 class MockTngApi : public ITngApi {
 public:
     // --- Configurable return values / state ---
+    // Program executing. Modelled like the real TNG: IsRunning (DLL export
+    // IsRun) only reports that TNG itself is alive and is always true, while
+    // IsStop is true exactly when no program/motion is executing.
     bool running = false;
     bool initialized = true;
     bool controllerReady = true;
@@ -31,6 +36,7 @@ public:
     bool paused = false;
 
     bool jogResult = true;
+    bool moveResult = true;
     bool cmdExecResult = true;
     bool setParamResult = true;
     bool startCodeResult = true;
@@ -78,10 +84,11 @@ public:
     std::vector<std::string> startCodes;
 
     // --- ITngApi implementation ---
-    bool isRunning() override { return running; }
+    bool isRunning() override { return true; }
     bool isInitialized() override { return initialized; }
     bool isControllerReady() override { return controllerReady; }
     bool isIdle() override { return idle; }
+    bool isStop() override { return !running; }
     bool isEStop() override { return estop; }
     bool isPause() override { return paused; }
 
@@ -206,7 +213,7 @@ public:
     }
     bool moveAxis(double moveSpeed, int axis, double value) override {
         moveAxes.push_back({moveSpeed, axis, value});
-        return true;
+        return moveResult;
     }
 };
 
@@ -224,126 +231,200 @@ void addButton(Config& cfg, const std::string& name, const std::string& action) 
 // JogController
 // ---------------------------------------------------------------------------
 
-static void test_servo_velocity() {
+// Long enough for the jog controller's settle timeout (150 ms).
+void waitSettle() { std::this_thread::sleep_for(std::chrono::milliseconds(160)); }
+
+static void test_move_single_click() {
     MockTngApi api;
     SharedState state;
-    JoggingConfig cfg;
-    cfg.jogSpeed = 1.0;  // 1:1 so the Jog value equals the velocity
+    JoggingConfig cfg;  // maxSpeed = 1000 mm/min -> MoveAxis speed = 10000
     api.motorX = 0.0;
     state.pendant.axisCode = xhc::kAxisX;
     state.stepSize = 1.0;
-    state.pendant.jogCounts.store(2);  // error 2 -> vel 10
+    state.pendant.jogCounts.store(1);
 
     JogController jc(api, state, cfg);
     jc.tick();
 
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK(!api.jogs[0].step);
-    CHECK_NEAR(api.jogs[0].x, 10.0, 1e-9);
-    CHECK_NEAR(api.jogs[0].y, 0.0, 1e-9);
-    CHECK_NEAR(api.jogs[0].z, 0.0, 1e-9);
+    CHECK_EQ(api.moveAxes.size(), 1u);
+    CHECK_NEAR(api.moveAxes[0].speed, 10000.0, 1e-9);
+    CHECK_EQ(api.moveAxes[0].axis, 0);
+    CHECK_NEAR(api.moveAxes[0].value, 1.0, 1e-9);
+    CHECK_EQ(api.jogs.size(), 0u);
     CHECK_EQ(api.jogs9.size(), 0u);
-    CHECK_EQ(api.moveAxes.size(), 0u);
 }
 
-static void test_servo_velocity_capped() {
+static void test_move_small_click_not_ignored() {
+    // Regression: a single click at the smallest step (0.001 mm) must move,
+    // instead of being swallowed by a start deadband.
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
-    cfg.jogSpeed = 1.0;
-    cfg.maxSpeed = 600.0;  // maxVel = 10 mm/s
-    api.motorX = 0.0;
+    api.motorX = 10.0;
     state.pendant.axisCode = xhc::kAxisX;
-    state.stepSize = 10.0;
-    state.pendant.jogCounts.store(1);  // error 10 -> vel 50 -> capped 10
+    state.stepSize = 0.001;
+    state.pendant.jogCounts.store(1);
 
     JogController jc(api, state, cfg);
     jc.tick();
 
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK_NEAR(api.jogs[0].x, 10.0, 1e-9);
+    CHECK_EQ(api.moveAxes.size(), 1u);
+    CHECK_NEAR(api.moveAxes[0].value, 10.001, 1e-9);
 }
 
-static void test_servo_negative_direction() {
+static void test_move_negative_direction() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
-    cfg.jogSpeed = 1.0;
     api.motorY = 0.0;
     state.pendant.axisCode = xhc::kAxisY;
     state.stepSize = 1.0;
-    state.pendant.jogCounts.store(-1);  // error -1 -> vel -5
+    state.pendant.jogCounts.store(-1);
 
     JogController jc(api, state, cfg);
     jc.tick();
 
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK_NEAR(api.jogs[0].y, -5.0, 1e-9);
+    CHECK_EQ(api.moveAxes.size(), 1u);
+    CHECK_EQ(api.moveAxes[0].axis, 1);
+    CHECK_NEAR(api.moveAxes[0].value, -1.0, 1e-9);
 }
 
-static void test_servo_a_axis() {
+static void test_move_a_axis() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
-    cfg.jogSpeed = 1.0;
     api.motorA = 0.0;
     state.pendant.axisCode = xhc::kAxisA;
     state.stepSize = 0.1;
-    state.pendant.jogCounts.store(5);  // error 0.5 -> vel 2.5
+    state.pendant.jogCounts.store(5);  // 0.5 mm
 
     JogController jc(api, state, cfg);
     jc.tick();
 
-    CHECK_EQ(api.jogs.size(), 0u);
-    CHECK_EQ(api.jogs9.size(), 1u);
-    CHECK(!api.jogs9[0].step);
-    CHECK_NEAR(api.jogs9[0].a, 2.5, 1e-9);
+    CHECK_EQ(api.moveAxes.size(), 1u);
+    CHECK_EQ(api.moveAxes[0].axis, 3);
+    CHECK_NEAR(api.moveAxes[0].value, 0.5, 1e-9);
 }
 
-static void test_servo_accumulates_target() {
+static void test_move_stops_at_target_no_oscillation() {
+    // Once arrived, no further MoveAxis is issued (no limit cycle).
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
-    cfg.jogSpeed = 1.0;
     api.motorX = 0.0;
     state.pendant.axisCode = xhc::kAxisX;
     state.stepSize = 1.0;
 
     JogController jc(api, state, cfg);
     state.pendant.jogCounts.store(1);
-    jc.tick();  // error 1 -> vel 5
-    state.pendant.jogCounts.store(2);
-    jc.tick();  // error 3 -> vel 15
-
-    CHECK_EQ(api.jogs.size(), 2u);
-    CHECK_NEAR(api.jogs[0].x, 5.0, 1e-9);
-    CHECK_NEAR(api.jogs[1].x, 15.0, 1e-9);
-}
-
-static void test_servo_hysteresis() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    api.motorX = 0.0;
-    state.pendant.axisCode = xhc::kAxisX;
-    state.stepSize = 1.0;
-
-    JogController jc(api, state, cfg);
-    state.pendant.jogCounts.store(5);
-    jc.tick();  // error 5 -> engage
-    CHECK_EQ(api.jogs.size(), 1u);
-
-    api.motorX = 5.0;
-    jc.tick();  // error 0 -> stop
-    CHECK_EQ(api.jogStops, 1);
-
-    api.motorX = 4.9;  // error 0.1 < start threshold 0.3 -> no re-engage
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK_EQ(api.jogStops, 1);
+    CHECK_EQ(api.moveAxes.size(), 1u);
+
+    api.motorX = 1.0;  // arrived
+    jc.tick();
+    jc.tick();
+    CHECK_EQ(api.moveAxes.size(), 1u);
 }
 
-static void test_servo_no_drive_back_after_external_move() {
+static void test_move_coalesces_rapid_ticks() {
+    // Target changes within the re-issue interval coalesce into a single
+    // MoveAxis; after the interval elapses the latest target is re-issued.
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(1);
+    jc.tick();  // move to 1.0
+    CHECK_EQ(api.moveAxes.size(), 1u);
+
+    state.pendant.jogCounts.store(1);
+    jc.tick();  // target 2.0, within interval -> no new move
+    CHECK_EQ(api.moveAxes.size(), 1u);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    state.pendant.jogCounts.store(1);
+    jc.tick();  // target 3.0, interval elapsed -> re-issue
+    CHECK_EQ(api.moveAxes.size(), 2u);
+    CHECK_NEAR(api.moveAxes[1].value, 3.0, 1e-9);
+}
+
+static void test_move_settles_to_new_anchor() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(1);
+    jc.tick();
+    api.motorX = 0.998;  // within motor resolution of the target
+    waitSettle();
+    jc.tick();  // idle + quiet -> settle on the commanded target
+
+    state.pendant.jogCounts.store(1);
+    jc.tick();
+    CHECK_EQ(api.moveAxes.size(), 2u);
+    CHECK_NEAR(api.moveAxes[1].value, 2.0, 1e-9);
+
+    api.motorX = 1.5;  // stopped well short (soft limit): adopt reached position
+    waitSettle();
+    jc.tick();
+    state.pendant.jogCounts.store(1);
+    jc.tick();
+    CHECK_EQ(api.moveAxes.size(), 3u);
+    CHECK_NEAR(api.moveAxes[2].value, 2.5, 1e-9);
+}
+
+static void test_move_sub_resolution_steps_accumulate() {
+    // Regression: steps finer than the motor resolution must not be lost when
+    // the axis settles without having moved (anchor kept on the target).
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 39.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 0.001;
+
+    JogController jc(api, state, cfg);
+    for (int i = 0; i < 3; ++i) {
+        state.pendant.jogCounts.store(1);
+        jc.tick();
+        waitSettle();
+        jc.tick();  // motor still reports 39.0
+    }
+    CHECK_EQ(api.moveAxes.size(), 3u);
+    CHECK_NEAR(api.moveAxes[2].value, 39.003, 1e-9);
+}
+
+static void test_move_input_not_dropped_at_settle() {
+    // A coalesced target still pending when the move would settle is sent
+    // instead of being discarded.
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(1);
+    jc.tick();
+    state.pendant.jogCounts.store(1);
+    jc.tick();  // coalesced: target 2.0 not yet sent
+    api.motorX = 1.0;
+    waitSettle();
+    jc.tick();  // must send the pending 2.0 instead of settling at 1.0
+    CHECK_EQ(api.moveAxes.size(), 2u);
+    CHECK_NEAR(api.moveAxes[1].value, 2.0, 1e-9);
+}
+
+static void test_move_no_drive_back_after_external_move() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
@@ -353,50 +434,29 @@ static void test_servo_no_drive_back_after_external_move() {
 
     JogController jc(api, state, cfg);
     state.pendant.jogCounts.store(5);
-    jc.tick();  // engage toward 5
+    jc.tick();  // move toward 5
     api.motorX = 5.0;
-    jc.tick();  // reached -> stop
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK_EQ(api.jogStops, 1);
+    waitSettle();
+    jc.tick();  // settled
+    CHECK_EQ(api.moveAxes.size(), 1u);
 
     // Something else (Home, G-code, TNG GUI) moves the axis far away.
+    state.machine.idle = false;
     api.motorX = -100.0;
+    state.pendant.jogCounts.store(1);  // wheel input during foreign motion
     for (int i = 0; i < 5; ++i) jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);  // must not servo back to 5
+    CHECK_EQ(api.moveAxes.size(), 1u);  // input discarded, no drive back
 
     // Next wheel click jogs relative to the new position.
+    state.machine.idle = true;
+    jc.tick();
     state.pendant.jogCounts.store(1);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 2u);
-    CHECK(api.jogs[1].x > 0.0);
-    CHECK(api.jogs[1].x < 6.0);  // error 1 (not 106)
+    CHECK_EQ(api.moveAxes.size(), 2u);
+    CHECK_NEAR(api.moveAxes[1].value, -99.0, 1e-9);
 }
 
-static void test_servo_target_reset_by_external_motion() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    api.motorX = 0.0;
-    state.pendant.axisCode = xhc::kAxisX;
-    state.stepSize = 0.1;
-
-    JogController jc(api, state, cfg);
-    state.pendant.jogCounts.store(1);  // target 0.1, below start deadband
-    jc.tick();
-    CHECK_EQ(api.jogs.size(), 0u);
-
-    // Machine busy with motion that is not ours: pending target dropped.
-    state.machine.idle = false;
-    api.motorX = 50.0;
-    jc.tick();
-    state.machine.idle = true;
-
-    state.pendant.jogCounts.store(1);  // 50 + 0.1: still below deadband
-    jc.tick();
-    CHECK_EQ(api.jogs.size(), 0u);
-}
-
-static void test_servo_target_reset_after_estop() {
+static void test_move_reset_after_estop() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
@@ -407,7 +467,7 @@ static void test_servo_target_reset_after_estop() {
     JogController jc(api, state, cfg);
     state.pendant.jogCounts.store(5);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_EQ(api.moveAxes.size(), 1u);
 
     state.machine.estop = true;
     api.motorX = 2.0;
@@ -416,32 +476,104 @@ static void test_servo_target_reset_after_estop() {
 
     state.machine.estop = false;  // e-stop released
     for (int i = 0; i < 5; ++i) jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);  // does not resume toward the old target
+    CHECK_EQ(api.moveAxes.size(), 1u);  // does not resume toward the old target
+
+    state.pendant.jogCounts.store(1);
+    jc.tick();
+    CHECK_EQ(api.moveAxes.size(), 2u);
+    CHECK_NEAR(api.moveAxes[1].value, 3.0, 1e-9);
 }
 
-static void test_servo_stops_on_position_read_failure() {
+static void test_move_stops_on_axis_change() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
-    api.motorX = 0.0;
     state.pendant.axisCode = xhc::kAxisX;
     state.stepSize = 1.0;
 
     JogController jc(api, state, cfg);
     state.pendant.jogCounts.store(5);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_EQ(api.moveAxes.size(), 1u);
 
+    state.pendant.axisCode = xhc::kAxisY;
+    jc.tick();
+    CHECK_EQ(api.jogStops, 1);
+    CHECK_EQ(api.moveAxes.size(), 1u);
+}
+
+static void test_move_needs_valid_position() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
     api.motorX = std::numeric_limits<double>::quiet_NaN();
-    jc.tick();
-    CHECK_EQ(api.jogStops, 1);
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
 
-    api.motorX = 1.0;  // read recovers: stale target must not be resumed
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(1);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_EQ(api.moveAxes.size(), 0u);
+
+    api.motorX = 7.0;  // read recovers: jog from the recovered position
+    state.pendant.jogCounts.store(1);
+    jc.tick();
+    CHECK_EQ(api.moveAxes.size(), 1u);
+    CHECK_NEAR(api.moveAxes[0].value, 8.0, 1e-9);
 }
 
-static void test_servo_stops_on_jog_failure() {
+static void test_move_stops_on_failure() {
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+    api.moveResult = false;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(5);
+    jc.tick();
+    CHECK_EQ(api.moveAxes.size(), 1u);
+    CHECK_EQ(api.jogStops, 1);
+
+    for (int i = 0; i < 5; ++i) jc.tick();
+    CHECK_EQ(api.moveAxes.size(), 1u);  // no retry without new wheel input
+}
+
+static void test_move_rejected_reissue_retried() {
+    // Regression: MoveAxis re-issued while a move is in flight may be
+    // rejected by the controller. The accumulated offset must be kept and the
+    // target retried, not dropped.
+    MockTngApi api;
+    SharedState state;
+    JoggingConfig cfg;
+    api.motorX = 0.0;
+    state.pendant.axisCode = xhc::kAxisX;
+    state.stepSize = 1.0;
+
+    JogController jc(api, state, cfg);
+    state.pendant.jogCounts.store(1);
+    jc.tick();  // first move accepted (target 1.0)
+    state.machine.idle = false;
+    state.machine.running = true;  // TNG reports our own move as running
+
+    api.moveResult = false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    state.pendant.jogCounts.store(2);
+    jc.tick();  // re-issue to 3.0 rejected
+    CHECK_EQ(api.moveAxes.size(), 2u);
+    CHECK_EQ(api.jogStops, 0);
+
+    api.moveResult = true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    jc.tick();  // retried without new wheel input
+    CHECK_EQ(api.moveAxes.size(), 3u);
+    CHECK_NEAR(api.moveAxes[2].value, 3.0, 1e-9);
+    CHECK_EQ(api.jogStops, 0);
+}
+
+static void test_move_blocked_while_program_runs() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
@@ -451,40 +583,28 @@ static void test_servo_stops_on_jog_failure() {
 
     JogController jc(api, state, cfg);
     state.pendant.jogCounts.store(5);
-    jc.tick();  // vel 25
-    CHECK_EQ(api.jogs.size(), 1u);
-
-    api.jogResult = false;
-    api.motorX = 4.0;  // vel 5: re-issue fails
     jc.tick();
-    CHECK_EQ(api.jogStops, 1);
-}
+    CHECK_EQ(api.moveAxes.size(), 1u);
 
-static void test_servo_blocked_while_program_runs() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    api.motorX = 0.0;
-    state.pendant.axisCode = xhc::kAxisX;
-    state.stepSize = 1.0;
-
-    JogController jc(api, state, cfg);
-    state.pendant.jogCounts.store(5);
-    jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
-
+    // TNG reports our own MoveAxis as running: the wheel move continues.
     state.machine.running = true;
+    state.machine.idle = false;
+    jc.tick();
+    CHECK_EQ(api.jogStops, 0);
+
+    // A paused program aborts the move and blocks new wheel input.
+    state.machine.paused = true;
     jc.tick();
     CHECK_EQ(api.jogStops, 1);
     state.pendant.jogCounts.store(5);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_EQ(api.moveAxes.size(), 1u);
 
-    state.machine.running = false;
-    state.machine.paused = true;
+    // Something already running when the wheel turns: input is dropped.
+    state.machine.paused = false;
     state.pendant.jogCounts.store(5);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_EQ(api.moveAxes.size(), 1u);
 }
 
 static void test_override_allowed_while_program_runs() {
@@ -502,46 +622,7 @@ static void test_override_allowed_while_program_runs() {
     CHECK_EQ(api.setParams.size(), 1u);
 }
 
-static void test_servo_jogspeed_division() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    cfg.jogSpeed = 12.0;  // default: Jog value = vel / 12
-    api.motorX = 0.0;
-    state.pendant.axisCode = xhc::kAxisX;
-    state.stepSize = 1.0;
-    state.pendant.jogCounts.store(2);  // error 2 -> vel 10 -> jog value 10/12
-
-    JogController jc(api, state, cfg);
-    jc.tick();
-
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK_NEAR(api.jogs[0].x, 10.0 / 12.0, 1e-9);
-}
-
-static void test_servo_no_reissue_similar_velocity() {
-    MockTngApi api;
-    SharedState state;
-    JoggingConfig cfg;
-    api.motorX = 0.0;
-    state.pendant.axisCode = xhc::kAxisX;
-    state.stepSize = 1.0;
-
-    JogController jc(api, state, cfg);
-    state.pendant.jogCounts.store(2);
-    jc.tick();  // error 2 -> vel 10
-    CHECK_EQ(api.jogs.size(), 1u);
-
-    api.motorX = 0.1;  // error 1.9 -> vel 9.5, |9.5-10| < 1 -> no re-issue
-    jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
-
-    api.motorX = 0.5;  // error 1.5 -> vel 7.5, |7.5-10| > 1 -> re-issue
-    jc.tick();
-    CHECK_EQ(api.jogs.size(), 2u);
-}
-
-static void test_servo_blocked_by_estop() {
+static void test_move_blocked_by_estop() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
@@ -558,7 +639,7 @@ static void test_servo_blocked_by_estop() {
 
 // The shared e-stop flag may be stale (it is refreshed at the display rate,
 // review item 16): the jog tick asks the controller directly before moving.
-static void test_servo_checks_live_estop() {
+static void test_move_checks_live_estop() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
@@ -567,22 +648,22 @@ static void test_servo_checks_live_estop() {
     state.stepSize = 1.0;
 
     JogController jc(api, state, cfg);
-    api.estop = true;                  // shared state still says no e-stop
+    api.estop = true;  // shared state still says no e-stop
     state.pendant.jogCounts.store(5);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 0u);
+    CHECK_EQ(api.moveAxes.size(), 0u);
 
     api.estop = false;
     state.pendant.jogCounts.store(5);
     jc.tick();
-    CHECK_EQ(api.jogs.size(), 1u);
+    CHECK_EQ(api.moveAxes.size(), 1u);
 
-    api.estop = true;                  // e-stop while the servo is running
+    api.estop = true;  // e-stop while the move is in flight
     jc.tick();
     CHECK_EQ(api.jogStops, 1);
 }
 
-static void test_servo_disabled_in_attach_mode() {
+static void test_move_disabled_in_attach_mode() {
     MockTngApi api;
     SharedState state;
     JoggingConfig cfg;
@@ -772,9 +853,9 @@ static void test_button_step_size_drives_jog_distance() {
     JogController jc(api, state, cfg.jogging);
     jc.tick();
 
-    // 2 mm error -> the servo starts moving in +X.
-    CHECK_EQ(api.jogs.size(), 1u);
-    CHECK(api.jogs[0].x > 0.0);
+    // 2 clicks x 1 mm -> MoveAxis to X = 2.
+    CHECK_EQ(api.moveAxes.size(), 1u);
+    CHECK_NEAR(api.moveAxes[0].value, 2.0, 1e-9);
 }
 
 static void test_button_override_without_reading() {
@@ -860,6 +941,13 @@ static void test_state_reader_reads_all_fields() {
     CHECK(state.machine.paused);
     CHECK(state.machine.initialized);
     CHECK(!state.machine.estop);
+
+    // Idle machine: IsRunning stays true (TNG alive) but no program runs.
+    api.idle = true;
+    api.running = false;
+    api.paused = false;
+    CHECK(sr.read());
+    CHECK(!state.machine.running);
 }
 
 static void test_state_reader_estop_blocks() {
@@ -981,24 +1069,26 @@ static void test_display_frame_encoding() {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    test_servo_velocity();
-    test_servo_velocity_capped();
-    test_servo_negative_direction();
-    test_servo_a_axis();
-    test_servo_accumulates_target();
-    test_servo_jogspeed_division();
-    test_servo_hysteresis();
-    test_servo_no_reissue_similar_velocity();
-    test_servo_blocked_by_estop();
-    test_servo_checks_live_estop();
-    test_servo_disabled_in_attach_mode();
-    test_servo_no_drive_back_after_external_move();
-    test_servo_target_reset_by_external_motion();
-    test_servo_target_reset_after_estop();
-    test_servo_stops_on_position_read_failure();
-    test_servo_stops_on_jog_failure();
-    test_servo_blocked_while_program_runs();
+    test_move_single_click();
+    test_move_small_click_not_ignored();
+    test_move_negative_direction();
+    test_move_a_axis();
+    test_move_stops_at_target_no_oscillation();
+    test_move_coalesces_rapid_ticks();
+    test_move_settles_to_new_anchor();
+    test_move_input_not_dropped_at_settle();
+    test_move_no_drive_back_after_external_move();
+    test_move_reset_after_estop();
+    test_move_stops_on_axis_change();
+    test_move_needs_valid_position();
+    test_move_stops_on_failure();
+    test_move_rejected_reissue_retried();
+    test_move_sub_resolution_steps_accumulate();
+    test_move_blocked_while_program_runs();
     test_override_allowed_while_program_runs();
+    test_move_blocked_by_estop();
+    test_move_checks_live_estop();
+    test_move_disabled_in_attach_mode();
     test_override_feed();
     test_override_spindle_clamped();
 

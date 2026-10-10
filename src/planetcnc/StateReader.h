@@ -19,6 +19,8 @@ public:
 private:
     ITngApi& api_;
     SharedState& state_;
+    // Last logged status-flag bitmask (-1 = none yet); logs only on change.
+    int lastFlags_ = -1;
 };
 
 } // namespace mpgd

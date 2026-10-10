@@ -4,25 +4,45 @@
 #include "logic/SharedState.h"
 
 #include <chrono>
+#include <optional>
 
 namespace mpgd {
 
 class ITngApi;
 
-// Converts accumulated MPG wheel counts into smooth position-following motion.
-// The wheel updates a target coordinate and a velocity servo drives the axis
-// toward it via continuous Jog (mm/s). The velocity is capped by the braking
-// distance so the axis decelerates to zero at the target, and hysteresis (with
-// a stop deadband larger than the controller's minimum-jog braking distance)
-// prevents a limit cycle. Also handles feed/spindle override.
+// Converts accumulated MPG wheel counts into absolute position-following
+// motion against a frozen "stable reference point" (anchor).
+//
+// While the controller is idle (machine stationary) the current motor
+// coordinate of the selected axis is captured as the anchor and refreshed on
+// every tick. When the wheel starts turning, all increments/decrements are
+// accumulated relative to that anchor and the resulting absolute target
+// (anchor + offset) is sent via PlanetCNC MoveAxis().
+//
+// The anchor does NOT change while the machine is moving: it is refreshed only
+// once the controller reports idle again (the axis has stopped at the new
+// point). No current-position feedback (target - current) is used while
+// moving - that comparison previously drove the system into self-oscillation.
+//
+// Every pending target is dropped on e-stop, jog disable, axis change, a
+// paused program, or motion that was already running when the wheel turned
+// (program, homing, MDI, TNG GUI jog), so a stale target can never drive the
+// axis back to an old position. TNG reports our own MoveAxis as running too,
+// so that flag does not abort an active wheel move. A MoveAxis re-issue the
+// controller rejects mid-move is retried instead of dropping the offset.
+//
+// Feed/spindle override is handled when the rotary selects those positions.
 // Runs on the jog thread (10 ms tick).
 class JogController {
 public:
     JogController(ITngApi& api, SharedState& state, const JoggingConfig& cfg);
 
-    // One periodic tick. Drains the wheel-count accumulator, updates the target
-    // and drives the servo. Safe to call repeatedly even when the TNG API is
-    // not initialized or jogging is disabled.
+    // One periodic tick. Drains the wheel-count accumulator and, for the
+    // selected axis, keeps the anchor synced while idle, accumulates wheel
+    // counts relative to the anchor, issues MoveAxis when appropriate and
+    // settles back to a new anchor once the machine is idle again. Safe to
+    // call repeatedly even when the TNG API is not initialized or jogging is
+    // disabled.
     void tick();
 
     // Immediately stops any active motion and clears accumulated state.
@@ -30,32 +50,39 @@ public:
 
 private:
     int drainCounts();
-    void updateTarget(int axis, int counts, double stepSize);
-    void runServo(int axis, bool freshCounts);
-    void stopServo();
-    void resetTargets();
+    double readMotorPosition(int axis);
+    void syncAnchor(int axis);
+    void beginJog(int axis, int counts, double stepSize);
+    void issueMove(int axis);
+    void settle(int axis);
+    void stopMotion();
+    void reset();
     void processOverride(bool spindle, int counts);
 
     ITngApi& api_;
     SharedState& state_;
     const JoggingConfig& cfg_;
 
-    // Per-axis target positions (motor coordinates). NaN = not yet known;
-    // initialized lazily from the current motor position on first use.
-    // Cleared whenever the servo stops, the axis selection changes, or the
-    // machine is moved by anything else (program, homing, TNG GUI jog, e-stop),
-    // so a stale target can never drive the axis back to an old position.
-    double target_[6] = {};
+    // Selected axis on the previous tick; a change drops all motion state.
     int lastAxis_ = -1;
-    // Until this time the machine reporting "not idle" is attributed to our
-    // own servo decelerating after a stop rather than to an external move.
-    std::chrono::steady_clock::time_point ownMotionUntil_{};
-    bool servoActive_ = false;
-    int servoAxis_ = -1;
-    // Last commanded velocity (mm/s). Used to avoid re-issuing Jog() every
-    // tick: the controller keeps jogging at the last velocity, and re-issuing
-    // on every tick makes it re-ramp and overshoot (limit-cycle oscillation).
-    double lastVel_ = 0.0;
+    // Stable reference point (motor coordinate) of the selected axis.
+    // NaN = not captured. Refreshed only while idle; frozen during a move.
+    double anchor_;
+    // Accumulated wheel offset in mm since the anchor (reset on settle/sync).
+    double offset_ = 0.0;
+    // True while a wheel-driven move is in flight (anchor frozen).
+    bool active_ = false;
+    // Last absolute target passed to MoveAxis (NaN = none). Used to skip
+    // redundant re-issues.
+    double sentTarget_;
+    // Per-axis flag so the "motor position unavailable" warning is emitted
+    // once per outage (not on every 10 ms tick).
+    bool warnedNaN_[6] = {};
+    // Time of the last MoveAxis command; rate-limits re-issuing and backs the
+    // settle timeout.
+    std::chrono::steady_clock::time_point lastMove_{};
+    // Start of the current run of rejected MoveAxis re-issues (empty = none).
+    std::optional<std::chrono::steady_clock::time_point> failingSince_;
 };
 
 } // namespace mpgd
